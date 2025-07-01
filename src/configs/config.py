@@ -41,7 +41,8 @@ class SystemArgs:
     ])
     use_lora: bool = True
     use_qlora: bool = True
-    train: bool = True
+
+    train: bool = False
     test: bool = True
     num_proc: int = 4
 
@@ -53,7 +54,7 @@ class ModelArgs:
     use_flash_attn2: bool = True
     max_seq_length: int = 4096
     max_new_tokens: int = 512
-    do_sample: bool = False
+    do_sample: bool = True
     top_k: int = 50
     top_p: float = 0.8
     temperature: float = 0.7

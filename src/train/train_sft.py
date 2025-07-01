@@ -121,7 +121,7 @@ def run_inference(
             tokenize=True,
             add_generation_prompt=True,
             return_tensors="pt"
-        ).input_ids
+        )
 
         answer_text = generate_answer(
             model,
@@ -161,6 +161,7 @@ def main(
         backup_path=system_args.backup_path
     )
     training_args.output_dir = output_dir
+    training_args.logging_dir = os.path.join(output_dir, "logs")
 
     # 1) 설정 파일 업데이트
     bnb_config, lora_config, training_config = initialize_config(
