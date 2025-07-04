@@ -6,28 +6,42 @@ from datasets import load_dataset
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
-    TrainingArguments,
-    BitsAndBytesConfig
+    BitsAndBytesConfig,
 )
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig
 from src.configs.config import (
     SystemArgs,
     ModelArgs,
     DataArgs,
-    TrainingArgs,
+    SFTTrainingArgs,
     BitsAndBytesArgs,
     LoraArgs
 )
-from src.utils.path_utils import create_out_dir # , output_path_record
+from src.utils.path_utils import create_out_dir
 from src.utils.checker import check_sft_type
+
+import random
+import numpy as np
+from peft import PeftModel, PeftModelForCausalLM
+
+from src.utils.print_utils import printw, printi, printe
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def initialize_config(
     system_args: SystemArgs,
     bnb_args: BitsAndBytesArgs,
     lora_args: LoraArgs,
-    training_args: TrainingArgs
+    sft_training_args: SFTTrainingArgs
 ):
     bnb_config = None
     lora_config = None
@@ -37,8 +51,8 @@ def initialize_config(
     if system_args.use_lora:
         lora_config = LoraConfig(**vars(lora_args))
 
-    training_config = TrainingArguments(**vars(training_args))
-    return bnb_config, lora_config, training_config
+    sft_training_config = SFTConfig(**vars(sft_training_args))
+    return bnb_config, lora_config, sft_training_config
 
 
 def add_system_prompt(example, system_prompt: str):
@@ -87,9 +101,10 @@ def run_inference(
         test_dataset,
         model_dir: str,
         model_args: ModelArgs,
-        bnb_config: BitsAndBytesConfig
+        bnb_config: BitsAndBytesConfig,
+        target_name: str
 ):
-    print("\n--- [INFO] Starting Inference ---")
+    printi("Starting Inference")
 
     # 1) 모델 및 토크나이저 로드 (기존과 동일)
 
@@ -103,6 +118,25 @@ def run_inference(
         low_cpu_mem_usage=True,
     )
     model.eval()
+    model.config.use_cache = True
+
+    # ① 모델 클래스 출력
+    print(f"[DEBUG] model class: {model.__class__.__name__}")
+
+    # ② LoRA 적용 여부 확인
+    if isinstance(model, (PeftModel, PeftModelForCausalLM)):
+        # LoRA 어댑터가 여전히 분리된 상태
+        print("[DEBUG] PEFT LoRA 모델이 로드되었습니다.")
+        try:
+            print(f"[DEBUG] active adapters: {model.active_adapters}")
+        except AttributeError:
+            pass
+    elif hasattr(model, "peft_config"):
+        # merge_and_unload 후 peft_config가 그대로 남아 있을 수도 있음
+        print("[DEBUG] LoRA 가중치가 병합된 모델입니다. (peft_config 존재)")
+    else:
+        # 완전히 병합된 일반 CausalLM
+        print("[DEBUG] LoRA 어댑터가 없는 일반 모델입니다.")
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_dir,
@@ -136,58 +170,56 @@ def run_inference(
         results.append(new_example)
 
     # 3) 파일 저장
-    save_path = os.path.join(model_dir, "predictions.json")
+    save_dir = os.path.join(model_dir, "pred_result")
+    os.makedirs(save_dir, exist_ok=True)
+
+    save_path = os.path.join(save_dir, f"{target_name}.json")
+
     with open(save_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=4)
 
-    print(f"[INFO] Inference finished. Predictions saved to: {save_path}")
+    printi(f"Inference finished. Predictions saved to: {save_path}")
 
-
-def main(
-    system_args: SystemArgs,
-    model_args: ModelArgs,
-    data_args: DataArgs,
-    training_args: TrainingArgs,
-    bits_and_bytes_args: BitsAndBytesArgs,
-    lora_args: LoraArgs
-):
-
-    # 0) 저장 경로 및 백업 설정
-    output_dir = create_out_dir(
-        training_args.output_dir,
-        check_sft_type(system_args.use_lora, system_args.use_qlora),
-        model_args.model_id.value,
-        system_args.additional_info,
-        backup_path=system_args.backup_path
-    )
-    training_args.output_dir = output_dir
-    training_args.logging_dir = os.path.join(output_dir, "logs")
-
-    # 1) 설정 파일 업데이트
-    bnb_config, lora_config, training_config = initialize_config(
-        system_args,
-        bits_and_bytes_args,
-        lora_args,
-        training_args
-    )
-
-    # 2) 데이터 세트 로드
-    data_splits = []
-    if system_args.train:
-        data_splits.extend(["train", "dev"])
-    if system_args.test:
-        data_splits.append("test")
-
+def data_prepare(data_splits, data_args: DataArgs):# -> Dataset | DatasetDict | Any:
     data_files = {sp: os.path.join(data_args.data_dir, f"{sp}.json") for sp in data_splits}
     data_dict = load_dataset("json",data_files=data_files, num_proc=system_args.num_proc)
     data_dict = data_dict.map(
         lambda example: add_system_prompt(example, system_prompt=model_args.prompt_template),
         num_proc=system_args.num_proc
     )
+    return data_dict
 
+def main(
+    system_args: SystemArgs,
+    model_args: ModelArgs,
+    data_args: DataArgs,
+    sft_training_args: SFTTrainingArgs,
+    bits_and_bytes_args: BitsAndBytesArgs,
+    lora_args: LoraArgs
+):
+
+    # 0) 저장 경로 및 백업 설정
+    output_dir, target_name = create_out_dir(
+        sft_training_args.output_dir,
+        check_sft_type(system_args.use_lora, system_args.use_qlora),
+        model_args.model_id.value,
+        system_args.additional_info,
+        backup_path=system_args.backup_path
+    )
+    sft_training_args.output_dir = output_dir
+    sft_training_args.logging_dir = os.path.join(output_dir, "logs")
+
+    # 1) 설정 파일 업데이트
+    bnb_config, lora_config, sft_training_config = initialize_config(
+        system_args,
+        bits_and_bytes_args,
+        lora_args,
+        sft_training_args
+    )
 
     if system_args.train:
-        print("[INFO] Starting Training")
+        data_dict = data_prepare(["train", "dev"], data_args)
+        printi("Starting Training")
 
         # 3) 모델, 토크나이저
         tokenizer = AutoTokenizer.from_pretrained(
@@ -197,27 +229,28 @@ def main(
         if tokenizer.pad_token_id is None:
             tokenizer.pad_token = tokenizer.eos_token
 
-
         model = AutoModelForCausalLM.from_pretrained(
             model_args.model_id.value,
+            torch_dtype=model_args.dtype.value,
             attn_implementation="flash_attention_2" if model_args.use_flash_attn2 else "eager",
             quantization_config=bnb_config,
             device_map="auto",
             trust_remote_code=True,
             low_cpu_mem_usage=True,
-            torch_dtype=model_args.dtype.value,
         )
 
         model.config.use_cache = False
+        # model.gradient_checkpointing_enable()
 
         # 4) Trainer 설정
         trainer = SFTTrainer(
             model=model,
-            args=training_config,
+            args=sft_training_config,
             train_dataset=data_dict["train"],
             eval_dataset=data_dict["dev"],
             processing_class=tokenizer,
             peft_config=lora_config,
+            preprocess_logits_for_metrics=logits_to_cpu,
         )
 
         # 5) 모델 학습
@@ -225,29 +258,33 @@ def main(
 
         # 6) 모델 저장
         merged_model = trainer.model.merge_and_unload()
-        merged_model.save_pretrained(training_config.output_dir)
-        tokenizer.save_pretrained(training_config.output_dir)
-        print(f"--- [INFO] Merged model saved to {training_config.output_dir}")
+        merged_model.save_pretrained(sft_training_config.output_dir)
+        tokenizer.save_pretrained(sft_training_config.output_dir)
+        printi(f"Merged model saved to {sft_training_config.output_dir}")
 
     # 5) 추론 (system_args.test가 True일 때 실행)
     if system_args.test:
+        data_dict = data_prepare(["test"], data_args)
         run_inference(
             test_dataset=data_dict["test"],
-            model_dir=training_config.output_dir,
+            model_dir=sft_training_config.output_dir,
             model_args=model_args,
             bnb_config=bnb_config,
+            target_name=target_name
         )
 
+def logits_to_cpu(logits, labels):
+    # logits:  (batch, seq, vocab) -> int16 argmax만 남겨 크기 대폭 축소
+    preds = torch.argmax(logits, dim=-1).to(torch.int16).cpu()
+    return preds, labels.cpu()
 
 if __name__ == "__main__":
     system_args = SystemArgs()
     model_args = ModelArgs()
     data_args = DataArgs()
-    training_args = TrainingArgs()
+    sft_training_args = SFTTrainingArgs()
     bits_and_bytes_args = BitsAndBytesArgs()
     lora_args = LoraArgs()
-
+    set_seed(system_args.seed)
     os.environ["HF_TOKEN"] = system_args.hf_token
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(system_args.gpu_number)
-
-    main(system_args, model_args, data_args, training_args, bits_and_bytes_args, lora_args)
+    main(system_args, model_args, data_args, sft_training_args, bits_and_bytes_args, lora_args)

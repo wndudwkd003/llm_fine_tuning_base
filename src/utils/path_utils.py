@@ -1,4 +1,5 @@
 import os, shutil
+from src.utils.print_utils import printi
 
 def create_out_dir(
     output_dir: str,
@@ -7,26 +8,31 @@ def create_out_dir(
     additional_info: str = "",
     backup_path: list[str] = None
 ):
+
+    model_id = slash_remove(model_id)
+    target_name = f"{model_id}_{train_type}{f'_{additional_info}' if additional_info else ''}"
+
     target_dir = os.path.join(
         output_dir,
-        train_type,
-        model_id,
-        additional_info
+        target_name
     )
 
     backup_dir = os.path.join(target_dir, "backup")
     os.makedirs(backup_dir, exist_ok=True)
 
     # 백업 설정
-    print(f"[INFO] Backup setting")
+    printi(f"Backup setting")
     for path in backup_path:
         target_path = os.path.join(backup_dir, os.path.basename(path))
         shutil.copy(path, target_path)
         print("    -->", f"move to {target_path}")
 
-    return target_dir
+    return target_dir, target_name
 
 
+
+def slash_remove(path: str):
+    return path.replace("/", "_").replace("\\", "_").replace(":", "_").replace(" ", "_")
 
 
 # def output_path_record(output_dir: str):

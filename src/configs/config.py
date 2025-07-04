@@ -7,7 +7,7 @@ import yaml
 from peft import TaskType, LoraConfig
 from transformers import TrainingArguments, BitsAndBytesConfig
 
-GLOBAL_BATCH_SIZE = 8
+GLOBAL_BATCH_SIZE = 4
 NUM_DEVICES = 1
 
 
@@ -15,9 +15,9 @@ class ModelId(Enum):
     """
     모델 ID를 정의하는 Enum 클래스입니다.
     """
-    EXAONE3_5_IT_7_8B = "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct"
-    EXAONE3_5_IT_2_4B = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
-
+    #EXAONE3_5_IT_7_8B = "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct"
+    #EXAONE3_5_IT_2_4B = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
+    KANANA1_5_IT_8B = "kakaocorp/kanana-1.5-8b-instruct-2505"
 
 class DType(Enum):
     """
@@ -32,8 +32,8 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = "trial-1"
-    gpu_number: int = 0
+    additional_info: str = "qlora_test_2_adamw_8bit"
+    gpu_number: int = 1
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
     backup_path: List[str] = field(default_factory=lambda: [
@@ -42,18 +42,17 @@ class SystemArgs:
     use_lora: bool = True
     use_qlora: bool = True
 
-    train: bool = False
+    train: bool = True
     test: bool = True
     num_proc: int = 4
 
 
 @dataclass
 class ModelArgs:
-    model_id: ModelId = ModelId.EXAONE3_5_IT_7_8B
+    model_id: ModelId = ModelId.KANANA1_5_IT_8B
     dtype: DType = DType.BF16
     use_flash_attn2: bool = True
-    max_seq_length: int = 4096
-    max_new_tokens: int = 512
+    max_new_tokens: int = 1024
     do_sample: bool = True
     top_k: int = 50
     top_p: float = 0.8
@@ -69,8 +68,7 @@ class ModelArgs:
 @dataclass
 class DataArgs:
     pad_to_multiple_of: Optional[int] = None
-    label_pad_token_id: int = -100
-    num_workers: int = 4
+    #label_pad_token_id: int = -100
     data_dir: str = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
 
 
@@ -79,12 +77,13 @@ class DataArgs:
 @dataclass
 class LoraArgs:
     task_type: TaskType = TaskType.CAUSAL_LM
-    r: int = 64
-    lora_alpha: int = 64
+    r: int = 32
+    lora_alpha: int = 32
     lora_dropout: float = 0.05
     target_modules: list[str] = field(default_factory=lambda: [
         'q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj','lm_head'
     ])
+
     bias: str = "none"  # or "all", "lora_only"
 
 @dataclass
@@ -96,13 +95,13 @@ class BitsAndBytesArgs:
 
 
 @dataclass
-class TrainingArgs:
+class SFTTrainingArgs:
     output_dir: str = "output"
-    per_device_train_batch_size: int = 2
-    per_device_eval_batch_size: int = 2
+    per_device_train_batch_size: int = 1
+    per_device_eval_batch_size: int = 1
+    eval_accumulation_steps: int = 1
     gradient_accumulation_steps: int = GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
     eval_strategy: str = "steps"
-    eval_accumulation_steps: int = 1
     eval_steps: int = 100
     save_steps: int = 100
     logging_steps: int = 50
@@ -116,3 +115,7 @@ class TrainingArgs:
     report_to: List[str] = field(default_factory=lambda: ["tensorboard"])
     fp16: bool = False
     bf16: bool = True
+    packing: bool = False
+    max_length: int = 4096
+    gradient_checkpointing: bool = True
+    optim: str = "adamw_8bit" # "adamw_torch" is default, or "adamw_8bit"
