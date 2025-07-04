@@ -20,6 +20,7 @@ from src.configs.config import (
 )
 from src.utils.path_utils import create_out_dir
 from src.utils.checker import check_sft_type
+from src.utils.log_utils import save_training_curves
 
 import random
 import numpy as np
@@ -35,7 +36,6 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
 
 def initialize_config(
     system_args: SystemArgs,
@@ -69,9 +69,13 @@ def generate_answer(
     model_args: ModelArgs,
     device="cuda",
 ):
+
+    device = next(model.parameters()).device
+    prompt_ids = prompt_ids.to(device)
     attention_mask = torch.ones_like(prompt_ids)
+
     outputs = model.generate(
-        input_ids=prompt_ids.to(device).unsqueeze(0),
+        input_ids=prompt_ids.unsqueeze(0),
         attention_mask=attention_mask.to(device).unsqueeze(0),
         do_sample=model_args.do_sample,
         max_new_tokens=model_args.max_new_tokens,
@@ -82,8 +86,10 @@ def generate_answer(
         top_k=model_args.top_k,
         repetition_penalty=model_args.repetition_penalty,
     )
+
     gen_tokens = outputs[0][prompt_ids.size(0):]
     text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
+
     if text.startswith("[|assistant|]"):
         text = text[len("[|assistant|]"):].lstrip()
     if text.startswith("assistant\n\n"):
@@ -109,7 +115,7 @@ def run_inference(
     # 1) 모델 및 토크나이저 로드 (기존과 동일)
 
     model = AutoModelForCausalLM.from_pretrained(
-        model_dir,
+        model_args.model_id.value,
         attn_implementation="flash_attention_2" if model_args.use_flash_attn2 else "eager",
         quantization_config=bnb_config,
         device_map="auto",
@@ -117,6 +123,14 @@ def run_inference(
         trust_remote_code=True,
         low_cpu_mem_usage=True,
     )
+
+    adapter_dir = os.path.join(model_dir, "lora_adapter")
+    model = PeftModel.from_pretrained(
+        model,
+        adapter_dir,
+        device_map="auto",
+    )
+
     model.eval()
     model.config.use_cache = True
 
@@ -139,7 +153,7 @@ def run_inference(
         print("[DEBUG] LoRA 어댑터가 없는 일반 모델입니다.")
 
     tokenizer = AutoTokenizer.from_pretrained(
-        model_dir,
+        model_args.model_id.value,
         trust_remote_code=True
     )
     if tokenizer.pad_token_id is None:
@@ -255,12 +269,16 @@ def main(
 
         # 5) 모델 학습
         trainer.train()
+        save_training_curves(trainer, sft_training_config.output_dir)
 
-        # 6) 모델 저장
-        merged_model = trainer.model.merge_and_unload()
-        merged_model.save_pretrained(sft_training_config.output_dir)
-        tokenizer.save_pretrained(sft_training_config.output_dir)
-        printi(f"Merged model saved to {sft_training_config.output_dir}")
+        # 6) lora 모델 저장
+        adapter_dir = os.path.join(sft_training_config.output_dir, "lora_adapter")
+        trainer.model.save_pretrained(adapter_dir)
+        printi(f"Model trained and saved to {adapter_dir}")
+
+        del trainer.model
+        del trainer
+        torch.cuda.empty_cache()
 
     # 5) 추론 (system_args.test가 True일 때 실행)
     if system_args.test:

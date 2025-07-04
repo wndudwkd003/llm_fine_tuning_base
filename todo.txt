@@ -1,0 +1,14 @@
+
+# dataset augmentation
+https://github.com/kyle-bong/K-TACC
+
+
+
+
+# korean wiki
+https://ko-nlp.github.io/Korpora/ko-docs/corpuslist/kowikitext.html
+
+
+
+# korean namu wiki
+https://ko-nlp.github.io/Korpora/ko-docs/corpuslist/namuwikitext.html

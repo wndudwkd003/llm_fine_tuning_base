@@ -32,7 +32,7 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = "qlora_test_2_adamw_8bit"
+    additional_info: str = "test_1_adamw_torch"
     gpu_number: int = 1
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
@@ -57,7 +57,7 @@ class ModelArgs:
     top_k: int = 50
     top_p: float = 0.8
     temperature: float = 0.7
-    repetition_penalty = 1.05
+    repetition_penalty: float = 1.05
     prompt_template: str = (
         "You are a helpful AI assistant. Please answer the user's questions kindly. "
         "당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 대해 잘 알고 있는 유능한 AI 어시스턴트 입니다. "
@@ -70,8 +70,6 @@ class DataArgs:
     pad_to_multiple_of: Optional[int] = None
     #label_pad_token_id: int = -100
     data_dir: str = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
-
-
 
 
 @dataclass
@@ -118,4 +116,12 @@ class SFTTrainingArgs:
     packing: bool = False
     max_length: int = 4096
     gradient_checkpointing: bool = True
-    optim: str = "adamw_8bit" # "adamw_torch" is default, or "adamw_8bit"
+    optim: str = "adamw_torch" # "adamw_torch" is default, or "adamw_8bit"
+    label_names: list[str] = field(default_factory=lambda: ["labels"])
+    save_strategy: str = "steps"
+    load_best_model_at_end: bool = True
+    metric_for_best_model: str = "eval_loss"
+    greater_is_better: bool = False
+
+
+
