@@ -1,6 +1,6 @@
-import os
-import json
+import os, json, random
 import torch
+import numpy as np
 from tqdm.auto import tqdm
 from datasets import load_dataset
 from transformers import (
@@ -9,7 +9,7 @@ from transformers import (
     BitsAndBytesConfig,
 )
 from trl import SFTTrainer, SFTConfig
-from peft import LoraConfig
+from peft import LoraConfig, PeftModel, PeftModelForCausalLM
 from src.configs.config import (
     SystemArgs,
     ModelArgs,
@@ -18,16 +18,14 @@ from src.configs.config import (
     BitsAndBytesArgs,
     LoraArgs
 )
+
+from sklearn.metrics import accuracy_score
 from src.utils.path_utils import create_out_dir
 from src.utils.checker import check_sft_type
 from src.utils.log_utils import save_training_curves
-
-import random
-import numpy as np
-from peft import PeftModel, PeftModelForCausalLM
-
 from src.utils.print_utils import printw, printi, printe
 
+LABEL_PAD_TOKEN_ID = -100
 
 def set_seed(seed):
     random.seed(seed)
@@ -128,29 +126,10 @@ def run_inference(
     model = PeftModel.from_pretrained(
         model,
         adapter_dir,
-        device_map="auto",
     )
 
     model.eval()
     model.config.use_cache = True
-
-    # ① 모델 클래스 출력
-    print(f"[DEBUG] model class: {model.__class__.__name__}")
-
-    # ② LoRA 적용 여부 확인
-    if isinstance(model, (PeftModel, PeftModelForCausalLM)):
-        # LoRA 어댑터가 여전히 분리된 상태
-        print("[DEBUG] PEFT LoRA 모델이 로드되었습니다.")
-        try:
-            print(f"[DEBUG] active adapters: {model.active_adapters}")
-        except AttributeError:
-            pass
-    elif hasattr(model, "peft_config"):
-        # merge_and_unload 후 peft_config가 그대로 남아 있을 수도 있음
-        print("[DEBUG] LoRA 가중치가 병합된 모델입니다. (peft_config 존재)")
-    else:
-        # 완전히 병합된 일반 CausalLM
-        print("[DEBUG] LoRA 어댑터가 없는 일반 모델입니다.")
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_id.value,
@@ -211,6 +190,8 @@ def main(
     bits_and_bytes_args: BitsAndBytesArgs,
     lora_args: LoraArgs
 ):
+    global LABEL_PAD_TOKEN_ID
+    LABEL_PAD_TOKEN_ID = data_args.label_pad_token_id
 
     # 0) 저장 경로 및 백업 설정
     output_dir, target_name = create_out_dir(
@@ -265,6 +246,7 @@ def main(
             processing_class=tokenizer,
             peft_config=lora_config,
             preprocess_logits_for_metrics=logits_to_cpu,
+            compute_metrics=compute_metrics,
         )
 
         # 5) 모델 학습
@@ -292,9 +274,27 @@ def main(
         )
 
 def logits_to_cpu(logits, labels):
-    # logits:  (batch, seq, vocab) -> int16 argmax만 남겨 크기 대폭 축소
-    preds = torch.argmax(logits, dim=-1).to(torch.int16).cpu()
+    preds = torch.argmax(logits, dim=-1).to(torch.int32).cpu()
     return preds, labels.cpu()
+
+def compute_metrics(eval_preds):
+    preds_nested, labels_nested = eval_preds  # object 배열 또는 (steps, batch, seq)
+
+    preds  = np.concatenate([np.asarray(p).ravel() for p in preds_nested])
+    labels = np.concatenate([np.asarray(l).ravel() for l in labels_nested])
+
+    if preds.size != labels.size:
+        min_len = min(preds.size, labels.size)
+        preds  = preds[:min_len]
+        labels = labels[:min_len]
+
+    mask = labels != LABEL_PAD_TOKEN_ID
+    if not mask.any():
+        return {"accuracy": 0.0}
+
+    acc = accuracy_score(labels[mask], preds[mask])
+    return {"accuracy": acc}
+
 
 if __name__ == "__main__":
     system_args = SystemArgs()

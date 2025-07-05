@@ -32,7 +32,7 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = "test_1_adamw_torch"
+    additional_info: str = "augmented_1"
     gpu_number: int = 1
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
@@ -40,7 +40,7 @@ class SystemArgs:
         "src/configs/config.py",
     ])
     use_lora: bool = True
-    use_qlora: bool = True
+    use_qlora: bool = False
 
     train: bool = True
     test: bool = True
@@ -68,8 +68,9 @@ class ModelArgs:
 @dataclass
 class DataArgs:
     pad_to_multiple_of: Optional[int] = None
-    #label_pad_token_id: int = -100
-    data_dir: str = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
+    label_pad_token_id: int = -100
+    # data_dir: str = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
+    data_dir: str = "datasets/sub_3_data_korean_culture_qa_V1.0_refined_augmented_preprocessed"
 
 
 @dataclass
@@ -95,16 +96,17 @@ class BitsAndBytesArgs:
 @dataclass
 class SFTTrainingArgs:
     output_dir: str = "output"
+    num_train_epochs: int = 3
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     eval_accumulation_steps: int = 1
     gradient_accumulation_steps: int = GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
-    eval_strategy: str = "steps"
-    eval_steps: int = 100
-    save_steps: int = 100
+    eval_strategy: str = "epoch" # "no", "epoch", "steps"
+    save_strategy: str = "epoch" # "no", "epoch", "steps"
+    eval_steps: int | None = None # 100
+    save_steps: int | None = None # 100
     logging_steps: int = 50
     learning_rate: float = 1e-4
-    num_train_epochs: int = 10
     weight_decay: float = 0.1
     warmup_ratio: float = 0.03
     lr_scheduler_type: str = "cosine"
@@ -118,7 +120,6 @@ class SFTTrainingArgs:
     gradient_checkpointing: bool = True
     optim: str = "adamw_torch" # "adamw_torch" is default, or "adamw_8bit"
     label_names: list[str] = field(default_factory=lambda: ["labels"])
-    save_strategy: str = "steps"
     load_best_model_at_end: bool = True
     metric_for_best_model: str = "eval_loss"
     greater_is_better: bool = False

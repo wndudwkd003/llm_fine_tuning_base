@@ -50,8 +50,8 @@ TYPE_INSTRUCTIONS = {
 import os
 import json
 
-SOURCE_DATA_DIR = "datasets/sub_3_data_korean_culture_qa_V1.0"
-TARGET_DATA_DIR = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
+SOURCE_DATA_DIR = "datasets/sub_3_data_korean_culture_qa_V1.0_augmented_preprocessed"
+TARGET_DATA_DIR = "datasets/sub_3_data_korean_culture_qa_V1.0_refine_augmented_preprocessed"
 SPLIT = ["train", "dev", "test"]
 
 
@@ -90,6 +90,11 @@ def main():
         src_file = os.path.join(SOURCE_DATA_DIR, f"{sp}.json")
         tgt_file = os.path.join(TARGET_DATA_DIR, f"{sp}.json")
         data = load_json(src_file)
+
+        if sp in ("train", "dev"):
+            for new_id, sample in enumerate(data):
+                sample["id"] = str(new_id)
+
         refined = [convert_sample(s) for s in data]
         save_json(refined, tgt_file)
         print(f"{sp}.json 변환 완료 → {tgt_file}")
