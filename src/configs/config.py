@@ -32,7 +32,7 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = "merged_datasets_early_v1" # "default_dataset_early_stopping_v1"
+    additional_info: str = "merged_datasets_early_v1" # "merged_datasets_early_v1" # "default_dataset_early_stopping_v1"
     gpu_number: int = 1
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
@@ -64,7 +64,7 @@ class ModelArgs:
         "사용자의 질문에 대해 친절하게 답변해주세요. 단, 동일한 문장을 절대 반복하지 마시오."
     )
     early_count: int = 5
-    load_model: str = "checkpoint-16700" # "lora_adapter"
+    load_model: str = "lora_adapter" # "lora_adapter"
 
 
 @dataclass
@@ -105,8 +105,8 @@ class SFTTrainingArgs:
     gradient_accumulation_steps: int = GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
     eval_strategy: str = "steps" # "no", "epoch", "steps"
     save_strategy: str = "steps" # "no", "epoch", "steps"
-    eval_steps: int | None = 500 # 100
-    save_steps: int | None = 500 # 100
+    eval_steps: int | None = 400 # 100
+    save_steps: int | None = 400 # 100
     logging_steps: int = 50
     learning_rate: float = 1e-4
     weight_decay: float = 0.1

@@ -182,7 +182,13 @@ def main(
     )
 
     if system_args.train:
-        data_dict = data_prepare(["train", "dev"], data_args)
+        data_dict = data_prepare(
+            ["train", "dev"],
+            data_args,
+            system_args,
+            model_args
+        )
+
         printi("Starting Training")
 
         # 3) 모델, 토크나이저
@@ -236,7 +242,13 @@ def main(
 
     # 5) 추론 (system_args.test가 True일 때 실행)
     if system_args.test:
-        data_dict = data_prepare(["test"], data_args)
+        data_dict = data_prepare(
+            ["test"],
+            data_args,
+            system_args,
+            model_args
+        )
+
         run_inference(
             test_dataset=data_dict["test"],
             model_dir=sft_training_config.output_dir,

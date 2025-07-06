@@ -1,10 +1,7 @@
-
-datasets/*
-output/*
-
+datasets/
+output/
+rag_index/
 src/configs/token.yaml
 
-*/__pycache__/*
-
-
+__pycache__/
 *.pyc
