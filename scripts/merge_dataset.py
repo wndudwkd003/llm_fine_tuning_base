@@ -9,13 +9,13 @@ def save_json(data, p):
 SHUFFLE = True  # True면 각 병합 리스트를 랜덤 셔플, False면 원래 순서를 유지
 
 if __name__ == "__main__":
-    original_dataset = "datasets/sub_3_data_korean_culture_qa_V1.0_augmented_preprocessed"
+    original_dataset = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
     other_datasets = [
         "datasets/KoAlpaca-v1.1a_converted",
         "datasets/CLIcK_converted",
-        "datasets/squad_kor_v1_converted",
+        "datasets/squad_kor_v1.2_converted",
     ]
-    target_dataset = "datasets/merged_dataset_v1"
+    target_dataset = "datasets/merged_dataset_no_aug_v1"
     os.makedirs(target_dataset, exist_ok=True)
 
     # 폴더별 JSON 파일 목록 수집

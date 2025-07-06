@@ -274,7 +274,7 @@ def main(
         )
 
 def logits_to_cpu(logits, labels):
-    preds = torch.argmax(logits, dim=-1).to(torch.int32).cpu()
+    preds = torch.argmax(logits, dim=-1).cpu().to(torch.int32)
     return preds, labels.cpu()
 
 def compute_metrics(eval_preds):

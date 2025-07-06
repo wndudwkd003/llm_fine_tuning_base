@@ -32,7 +32,7 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = "augmented_1"
+    additional_info: str = "merged_datasets_v1"
     gpu_number: int = 1
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
@@ -70,7 +70,7 @@ class DataArgs:
     pad_to_multiple_of: Optional[int] = None
     label_pad_token_id: int = -100
     # data_dir: str = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
-    data_dir: str = "datasets/sub_3_data_korean_culture_qa_V1.0_refined_augmented_preprocessed"
+    data_dir: str = "datasets/merged_dataset_no_aug_v1_refined"
 
 
 @dataclass
@@ -96,15 +96,15 @@ class BitsAndBytesArgs:
 @dataclass
 class SFTTrainingArgs:
     output_dir: str = "output"
-    num_train_epochs: int = 3
+    num_train_epochs: int = 1                # Epochs to train the model
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     eval_accumulation_steps: int = 1
     gradient_accumulation_steps: int = GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
-    eval_strategy: str = "epoch" # "no", "epoch", "steps"
-    save_strategy: str = "epoch" # "no", "epoch", "steps"
-    eval_steps: int | None = None # 100
-    save_steps: int | None = None # 100
+    eval_strategy: str = "steps" # "no", "epoch", "steps"
+    save_strategy: str = "steps" # "no", "epoch", "steps"
+    eval_steps: int | None = 100 # 100
+    save_steps: int | None = 100 # 100
     logging_steps: int = 50
     learning_rate: float = 1e-4
     weight_decay: float = 0.1
@@ -112,17 +112,18 @@ class SFTTrainingArgs:
     lr_scheduler_type: str = "cosine"
     save_total_limit: int = 1
     logging_dir: str = "logs"
-    report_to: List[str] = field(default_factory=lambda: ["tensorboard"])
+    report_to: List[str] | None = None # field(default_factory=lambda: ["tensorboard"])
     fp16: bool = False
     bf16: bool = True
     packing: bool = False
     max_length: int = 4096
     gradient_checkpointing: bool = True
-    optim: str = "adamw_torch" # "adamw_torch" is default, or "adamw_8bit"
+    activation_offloading: bool = False
     label_names: list[str] = field(default_factory=lambda: ["labels"])
     load_best_model_at_end: bool = True
     metric_for_best_model: str = "eval_loss"
     greater_is_better: bool = False
+    optim: str = "adamw_torch" # "adamw_torch" is default, or "adamw_8bit"
 
 
 

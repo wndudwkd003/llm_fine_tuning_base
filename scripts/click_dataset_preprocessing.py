@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split
 # 원본 데이터 디렉터리
 data_dir = "datasets/CLIcK"
 # 변환 후 저장할 디렉터리
-target_data_dir = "datasets/convert_CLIcK"
+target_data_dir = "datasets/CLIcK_converted"
 
 def convert_to_dataset_format(item):
     """주어진 item을 새로운 데이터셋 포맷으로 변환합니다."""
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     os.makedirs(target_data_dir, exist_ok=True)
 
     # 데이터를 9:1 비율로 분할 (train: 90%, validation: 10%)
-    train, val = train_test_split(train_data, test_size=0.1, random_state=42)
+    train, val = train_test_split(train_data, test_size=0.0001, random_state=42)
 
     # train, val 데이터를 새로운 포맷으로 변환
     converted_train = [convert_to_dataset_format(item) for item in train]
