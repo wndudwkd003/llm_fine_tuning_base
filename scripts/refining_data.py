@@ -23,7 +23,7 @@ TYPE_INSTRUCTIONS = {
         "단답형": (
             "[질문]을 잘 읽고 답변을 생성하시오. 문제를 그대로 출력하지 마시오.\n"
             "[지침]\n"
-            "질문에 대한 답을 2단어 이내로 간단히 답하시오.\n\n"
+            "질문에 대한 답을 2단어 내외로 간단히 답하시오.\n\n"
             "[예시]\n"
             "질문: 조선 후기의 실학 사상가로 목민심서를 쓴 인물은?\n"
             "답변: 정약용"
@@ -50,8 +50,10 @@ TYPE_INSTRUCTIONS = {
 import os
 import json
 
-SOURCE_DATA_DIR = "datasets/sub_3_data_korean_culture_qa_V1.0"
-TARGET_DATA_DIR = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
+SOURCE_DATA_DIR = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
+
+TARGET_DATA_DIR = SOURCE_DATA_DIR + "_refined"
+
 SPLIT = ["train", "dev", "test"]
 
 
@@ -90,6 +92,11 @@ def main():
         src_file = os.path.join(SOURCE_DATA_DIR, f"{sp}.json")
         tgt_file = os.path.join(TARGET_DATA_DIR, f"{sp}.json")
         data = load_json(src_file)
+
+        if sp in ("train", "dev"):
+            for new_id, sample in enumerate(data):
+                sample["id"] = str(new_id)
+
         refined = [convert_sample(s) for s in data]
         save_json(refined, tgt_file)
         print(f"{sp}.json 변환 완료 → {tgt_file}")
