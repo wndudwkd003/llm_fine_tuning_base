@@ -1,23 +1,11 @@
-import os, random, json
-
+import os, json, re
 from tqdm.auto import tqdm
 
-import torch
-
-from datasets import load_dataset
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
-    BitsAndBytesConfig,
-    EarlyStoppingCallback
 )
-
-from sentence_transformers import SentenceTransformer
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import FAISS as LCFAISS
-from langchain.docstore.in_memory import InMemoryDocstore
-from langchain.schema import Document
-
+from peft import PeftModel
 from src.configs.config import (
     SystemArgs,
     ModelArgs,
@@ -27,62 +15,76 @@ from src.configs.config import (
     LoraArgs,
     RAGIndexArgs
 )
-
 from src.utils.seeds import set_seed
 from src.utils.path_utils import create_out_dir
 from src.utils.checker import check_sft_type
-from src.utils.log_utils import save_training_curves
-from src.utils.print_utils import printw, printi, printe
+from src.utils.print_utils import printi, printe
 from src.utils.model_utils import (
     initialize_config,
-    data_prepare
+    data_prepare,
+    generate_answer
 )
+from src.test.retriever import Retriever
 
 LABEL_PAD_TOKEN_ID = -100
 
-@torch.inference_mode()
-def generate_answer(
-    model,
-    tokenizer,
-    prompt_ids,
-    terminators,
-    model_args: ModelArgs,
-    device="cuda",
-):
 
-    device = next(model.parameters()).device
-    prompt_ids = prompt_ids.to(device)
-    attention_mask = torch.ones_like(prompt_ids)
 
-    outputs = model.generate(
-        input_ids=prompt_ids.unsqueeze(0),
-        attention_mask=attention_mask.to(device).unsqueeze(0),
-        do_sample=model_args.do_sample,
-        max_new_tokens=model_args.max_new_tokens,
-        eos_token_id=terminators,
-        pad_token_id=tokenizer.pad_token_id,
-        temperature=model_args.temperature,
-        top_p=model_args.top_p,
-        top_k=model_args.top_k,
-        repetition_penalty=model_args.repetition_penalty,
+def load_model_and_tokenizer(model_args, bnb_config):
+    tokenizer = AutoTokenizer.from_pretrained(model_args.model_id.value, use_fast=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_args.model_id.value,
+        attn_implementation="flash_attention_2" if model_args.use_flash_attn2 else "eager",
+        quantization_config=bnb_config,
+        device_map="auto",
+        torch_dtype=model_args.dtype.value,
+        trust_remote_code=True,
+        low_cpu_mem_usage=True,
+    )
+    return model, tokenizer
+
+def extract_question(user_msg):
+    question_blocks = re.findall(r"\[질문\](.*?)(?=\[|$)", user_msg, re.DOTALL)
+    if not question_blocks:
+        return None
+    return question_blocks[-1].strip()
+
+def prepare_prompt_with_rag(messages, question, retrieved):
+    background = "\n".join([f"[{i+1}] {r['text']}" for i, r in enumerate(retrieved)]) if retrieved else ""
+    last_user_msg = messages[-1].copy()
+    if background:
+        last_user_msg["content"] = f"[배경]\n{background.strip()}\n\n{last_user_msg['content'].strip()}"
+    else:
+        last_user_msg["content"] = last_user_msg["content"].strip()
+    return messages[:-1] + [last_user_msg]
+
+def generate_prompt_ids(tokenizer, messages):
+    return tokenizer.apply_chat_template(
+        conversation=messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_tensors="pt"
     )
 
-    gen_tokens = outputs[0][prompt_ids.size(0):]
-    text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
+def run_rag_inference(model, tokenizer, retriever, sample, terminators, model_args):
+    user_msg = sample["messages"][-1]["content"]
+    question = extract_question(user_msg)
+    if question is None:
+        printe(f"[질문] 항목을 찾을 수 없음: {sample.get('id', 'UNKNOWN')}")
+        return None
 
-    if text.startswith("[|assistant|]"):
-        text = text[len("[|assistant|]"):].lstrip()
-    if text.startswith("assistant\n\n"):
-        text = text[len("assistant\n\n"):]
-    if text.startswith("답변: "):
-        text = text[4:]
-    elif text.startswith("답변:"):
-        text = text[3:]
-    if "#" in text:
-        text = text.split("#", 1)[0].strip()
-    return text
+    retrieved = retriever.retrieve(question, top_k=5)
+    messages = prepare_prompt_with_rag(sample["messages"], question, retrieved)
+    prompt_ids = generate_prompt_ids(tokenizer, messages)
+    answer = generate_answer(model, tokenizer, prompt_ids[0], terminators, model_args)
+    return {"answer": answer}
 
-
+def save_results(results, save_dir, target_name):
+    os.makedirs(save_dir, exist_ok=True)
+    path = os.path.join(save_dir, f"{target_name}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=4)
+    printi(f"Inference finished. Predictions saved to: {path}")
 
 
 def main(
@@ -117,7 +119,24 @@ def main(
         sft_training_args
     )
 
+    model, tokenizer = load_model_and_tokenizer(model_args, bnb_config)
+    model = PeftModel.from_pretrained(model, os.path.join(sft_training_config.output_dir, model_args.load_model))
+    retriever = Retriever(rag_index_args)
+
     data_dict = data_prepare(["test"], data_args)
+    terminators = [tokenizer.eos_token_id]
+    eot_id = tokenizer.convert_tokens_to_ids('<|eot_id|>')
+    if eot_id: terminators.append(eot_id)
+
+    results = []
+    for sample in tqdm(data_dict["test"], desc="Inference with RAG"):
+        output = run_rag_inference(model, tokenizer, retriever, sample, terminators, model_args)
+        if output:
+            sample_copy = sample.copy()
+            sample_copy["output"] = output
+            results.append(sample_copy)
+
+    save_results(results, os.path.join(sft_training_config.output_dir, "pred_result"), target_name)
 
 
 

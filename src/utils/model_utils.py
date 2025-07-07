@@ -1,5 +1,5 @@
 import os
-
+import torch
 from transformers import BitsAndBytesConfig
 from peft import LoraConfig
 from trl import SFTConfig
@@ -59,3 +59,48 @@ def data_prepare(
         num_proc=system_args.num_proc
     )
     return data_dict
+
+
+
+
+@torch.inference_mode()
+def generate_answer(
+    model,
+    tokenizer,
+    prompt_ids,
+    terminators,
+    model_args: ModelArgs,
+):
+
+    device = next(model.parameters()).device
+    prompt_ids = prompt_ids.to(device)
+    attention_mask = torch.ones_like(prompt_ids)
+
+    outputs = model.generate(
+        input_ids=prompt_ids.unsqueeze(0),
+        attention_mask=attention_mask.to(device).unsqueeze(0),
+        do_sample=model_args.do_sample,
+        max_new_tokens=model_args.max_new_tokens,
+        eos_token_id=terminators,
+        pad_token_id=tokenizer.pad_token_id,
+        temperature=model_args.temperature,
+        top_p=model_args.top_p,
+        top_k=model_args.top_k,
+        repetition_penalty=model_args.repetition_penalty,
+    )
+
+    gen_tokens = outputs[0][prompt_ids.size(0):]
+    text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
+
+    if text.startswith("[|assistant|]"):
+        text = text[len("[|assistant|]"):].lstrip()
+    if text.startswith("assistant\n\n"):
+        text = text[len("assistant\n\n"):]
+    if text.startswith("답변: "):
+        text = text[4:]
+    elif text.startswith("답변:"):
+        text = text[3:]
+    if "#" in text:
+        text = text.split("#", 1)[0].strip()
+    return text
+

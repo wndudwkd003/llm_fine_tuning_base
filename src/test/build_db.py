@@ -63,7 +63,8 @@ def main(rag_index_args: RAGIndexArgs):
                         metas.append(Metadata(
                             corpus=c_name,
                             split=ext,
-                            title=title
+                            title=title,
+                            text=ch,
                         ))
 
         printi(f"Loaded {len(chunks)} records and {len(metas)} metas from {c_name} corpus\n")
@@ -86,7 +87,7 @@ def main(rag_index_args: RAGIndexArgs):
     index = faiss.IndexFlatIP(dim)
     index.add(np.float32(vecs))
 
-    idx_path = os.path.join(rag_index_args.index_dir, rag_index_args.idx_base)
+    idx_path = os.path.join(rag_index_args.index_dir, rag_index_args.index_base)
     meta_path = os.path.join(rag_index_args.index_dir, rag_index_args.meta_base)
 
     faiss.write_index(index, idx_path)

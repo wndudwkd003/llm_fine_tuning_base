@@ -5,6 +5,7 @@ class Metadata:
     corpus: str = field(default="")
     split: str = field(default="")
     title: str = field(default="")
+    text: str = field(default="")
 
 # @dataclass
 # class Record:

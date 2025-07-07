@@ -1,11 +1,9 @@
+
+import yaml, torch
+from torch import dtype
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List
-import torch
-from torch import dtype
-import yaml
-from peft import TaskType, LoraConfig
-from transformers import TrainingArguments, BitsAndBytesConfig
+from peft import TaskType
 
 GLOBAL_BATCH_SIZE = 4
 NUM_DEVICES = 1
@@ -34,15 +32,14 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = "merged_datasets_early_v1" # "merged_datasets_early_v1" # "default_dataset_early_stopping_v1"
-    gpu_number: int = 1
+    additional_info: str = "merged_datasets_early_v2" # "merged_datasets_early_v1" # "default_dataset_early_stopping_v1"
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
-    backup_path: List[str] = field(default_factory=lambda: [
+    backup_path: list[str] = field(default_factory=lambda: [
         "src/configs/config.py",
     ])
     use_lora: bool = True
-    use_qlora: bool = True
+    use_qlora: bool = False
 
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     train: bool = True # True or False
@@ -52,7 +49,7 @@ class SystemArgs:
 
 @dataclass
 class ModelArgs:
-    model_id: ModelId = ModelId.GEMMA2_27B
+    model_id: ModelId = ModelId.KANANA1_5_IT_8B
     dtype: DType = DType.BF16
     use_flash_attn2: bool = True
     max_new_tokens: int = 1024
@@ -66,16 +63,15 @@ class ModelArgs:
         "당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 대해 잘 알고 있는 유능한 AI 어시스턴트 입니다. "
         "사용자의 질문에 대해 친절하게 답변해주세요. 단, 동일한 문장을 절대 반복하지 마시오."
     )
-    use_system_prompt: bool = False
-
-
+    use_system_prompt: bool = True
     early_stopping: int = 5
     load_model: str = "lora_adapter" # "lora_adapter"
+    use_accelerate: bool = False
 
 
 @dataclass
 class DataArgs:
-    pad_to_multiple_of: Optional[int] = None
+    pad_to_multiple_of: int | None = None
     label_pad_token_id: int = -100
     # data_dir: str = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
     data_dir: str = "datasets/merged_dataset_no_aug_v1_refined"
@@ -87,10 +83,10 @@ class LoraArgs:
     r: int = 32
     lora_alpha: int = 32
     lora_dropout: float = 0.05
-    target_modules: list[str] = field(default_factory=lambda: [
-        'q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj','lm_head'
+    target_modules: list[str] | str = field(default_factory=lambda: [
+        'q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj' # ,'lm_head'
     ])
-
+    #  "all-linear"
     bias: str = "none"  # or "all", "lora_only"
 
 @dataclass
@@ -99,6 +95,7 @@ class BitsAndBytesArgs:
     bnb_4bit_quant_type: str = DType.NF4.value
     bnb_4bit_compute_dtype: dtype = DType.BF16.value
     bnb_4bit_use_double_quant: bool = True
+    bnb_4bit_quant_storage: dtype = DType.BF16.value
 
 
 @dataclass
@@ -120,7 +117,7 @@ class SFTTrainingArgs:
     lr_scheduler_type: str = "cosine"
     save_total_limit: int = 1
     logging_dir: str = "logs"
-    report_to: List[str] | None = None # field(default_factory=lambda: ["tensorboard"])
+    report_to: list[str] | None = None # field(default_factory=lambda: ["tensorboard"])
     fp16: bool = False
     bf16: bool = True
     packing: bool = False
@@ -131,7 +128,7 @@ class SFTTrainingArgs:
     load_best_model_at_end: bool = True
     metric_for_best_model: str = "eval_loss"
     greater_is_better: bool = False
-    optim: str = "adamw_torch" # "adamw_torch" is default, or "adamw_8bit"
+    optim: str = "adamw_torch" # "adamw_torch" is default, adamw_hf or "adamw_8bit" or "paged_adamw_8bit"
 
 
 
@@ -150,5 +147,5 @@ class RAGIndexArgs:
     chunk_overlap: int = 128
     model_name: str = "nlpai-lab/KURE-v1" # "dragonkue/bge-m3-ko" # "jhgan/ko-sroberta-multitask"
     batch_size: int = 256
-    idx_base: str = "rag_flat.index"
+    index_base: str = "rag_flat.index"
     meta_base: str = "rag_meta.jsonl"

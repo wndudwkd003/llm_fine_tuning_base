@@ -29,53 +29,11 @@ from src.utils.log_utils import save_training_curves
 from src.utils.print_utils import printw, printi, printe
 from src.utils.model_utils import (
     initialize_config,
-    data_prepare
+    data_prepare,
+    generate_answer
 )
 
 LABEL_PAD_TOKEN_ID = -100
-
-
-@torch.inference_mode()
-def generate_answer(
-    model,
-    tokenizer,
-    prompt_ids,
-    terminators,
-    model_args: ModelArgs,
-    device="cuda",
-):
-
-    device = next(model.parameters()).device
-    prompt_ids = prompt_ids.to(device)
-    attention_mask = torch.ones_like(prompt_ids)
-
-    outputs = model.generate(
-        input_ids=prompt_ids.unsqueeze(0),
-        attention_mask=attention_mask.to(device).unsqueeze(0),
-        do_sample=model_args.do_sample,
-        max_new_tokens=model_args.max_new_tokens,
-        eos_token_id=terminators,
-        pad_token_id=tokenizer.pad_token_id,
-        temperature=model_args.temperature,
-        top_p=model_args.top_p,
-        top_k=model_args.top_k,
-        repetition_penalty=model_args.repetition_penalty,
-    )
-
-    gen_tokens = outputs[0][prompt_ids.size(0):]
-    text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
-
-    if text.startswith("[|assistant|]"):
-        text = text[len("[|assistant|]"):].lstrip()
-    if text.startswith("assistant\n\n"):
-        text = text[len("assistant\n\n"):]
-    if text.startswith("답변: "):
-        text = text[4:]
-    elif text.startswith("답변:"):
-        text = text[3:]
-    if "#" in text:
-        text = text.split("#", 1)[0].strip()
-    return text
 
 
 def run_inference(
@@ -93,10 +51,10 @@ def run_inference(
         model_args.model_id.value,
         attn_implementation="flash_attention_2" if model_args.use_flash_attn2 else "eager",
         quantization_config=bnb_config,
-        device_map="auto",
+        device_map="auto" if not model_args.use_accelerate else None,
         torch_dtype=model_args.dtype.value,
         trust_remote_code=True,
-        low_cpu_mem_usage=True,
+        low_cpu_mem_usage=True if not model_args.use_accelerate else False,
     )
 
     adapter_dir = os.path.join(model_dir, model_args.load_model)
@@ -110,13 +68,15 @@ def run_inference(
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_id.value,
-        trust_remote_code=True
+        trust_remote_code=True,
+        use_fast=True
     )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     # 2) 답변 생성
-    terminators = [tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids('<|eot_id|>')]
+    eot_token_id = tokenizer.convert_tokens_to_ids('<|eot_id|>')
+    terminators = [tokenizer.eos_token_id] if eot_token_id is None else [tokenizer.eos_token_id, eot_token_id]
 
     results = []
     for example in tqdm(test_dataset, desc="Inference"):
@@ -194,7 +154,8 @@ def main(
         # 3) 모델, 토크나이저
         tokenizer = AutoTokenizer.from_pretrained(
             model_args.model_id.value,
-            trust_remote_code=True
+            trust_remote_code=True,
+            use_fast=True
         )
         if tokenizer.pad_token_id is None:
             tokenizer.pad_token = tokenizer.eos_token
@@ -204,9 +165,9 @@ def main(
             torch_dtype=model_args.dtype.value,
             attn_implementation="flash_attention_2" if model_args.use_flash_attn2 else "eager",
             quantization_config=bnb_config,
-            device_map="auto",
+            device_map="auto" if not model_args.use_accelerate else None,
             trust_remote_code=True,
-            low_cpu_mem_usage=True,
+            low_cpu_mem_usage=True if not model_args.use_accelerate else False,
         )
 
         # model.gradient_checkpointing_enable()
@@ -294,4 +255,5 @@ if __name__ == "__main__":
     lora_args = LoraArgs()
     set_seed(system_args.seed)
     os.environ["HF_TOKEN"] = system_args.hf_token
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
     main(system_args, model_args, data_args, sft_training_args, bits_and_bytes_args, lora_args)
