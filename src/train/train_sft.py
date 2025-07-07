@@ -225,7 +225,7 @@ def main(
             preprocess_logits_for_metrics=logits_to_cpu,
             compute_metrics=compute_metrics,
             callbacks=[EarlyStoppingCallback(
-                early_stopping_patience=model_args.early_count,
+                early_stopping_patience=model_args.early_stopping,
                 early_stopping_threshold=0.0
             )]
         )

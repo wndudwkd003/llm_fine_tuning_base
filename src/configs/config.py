@@ -16,8 +16,10 @@ class ModelId(Enum):
     모델 ID를 정의하는 Enum 클래스입니다.
     """
     #EXAONE3_5_IT_7_8B = "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct"
-    #EXAONE3_5_IT_2_4B = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
+    #EXAONE3_5_IT_32B = "LGAI-EXAONE/EXAONE-3.5-32B-Instruct"
     KANANA1_5_IT_8B = "kakaocorp/kanana-1.5-8b-instruct-2505"
+    QWEN2_5_LEAD_14B = "v000000/Qwen2.5-14B-Gutenberg-1e-Delta"
+    GEMMA2_27B = "nbeerbower/gemma2-gutenberg-27B"
 
 class DType(Enum):
     """
@@ -40,16 +42,17 @@ class SystemArgs:
         "src/configs/config.py",
     ])
     use_lora: bool = True
-    use_qlora: bool = False
+    use_qlora: bool = True
 
-    train: bool = True
-    test: bool = False
+    # 반드시 train 또는 test는 하나만 true로 설정할 것
+    train: bool = True # True or False
+    test: bool = False # True or False
     num_proc: int = 4
 
 
 @dataclass
 class ModelArgs:
-    model_id: ModelId = ModelId.KANANA1_5_IT_8B
+    model_id: ModelId = ModelId.GEMMA2_27B
     dtype: DType = DType.BF16
     use_flash_attn2: bool = True
     max_new_tokens: int = 1024
@@ -63,7 +66,10 @@ class ModelArgs:
         "당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 대해 잘 알고 있는 유능한 AI 어시스턴트 입니다. "
         "사용자의 질문에 대해 친절하게 답변해주세요. 단, 동일한 문장을 절대 반복하지 마시오."
     )
-    early_count: int = 5
+    use_system_prompt: bool = False
+
+
+    early_stopping: int = 5
     load_model: str = "lora_adapter" # "lora_adapter"
 
 
