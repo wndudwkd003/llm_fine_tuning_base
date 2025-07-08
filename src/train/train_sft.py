@@ -1,23 +1,21 @@
-import os, json, random
+import os, json
 import torch
 import numpy as np
 from tqdm.auto import tqdm
-from datasets import load_dataset
 from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
     BitsAndBytesConfig,
     EarlyStoppingCallback
 )
 from trl import SFTTrainer, SFTConfig
-from peft import LoraConfig, PeftModel, PeftModelForCausalLM
+from peft import PeftModel
 from src.configs.config import (
     SystemArgs,
     ModelArgs,
     DataArgs,
     SFTTrainingArgs,
     BitsAndBytesArgs,
-    LoraArgs
+    LoraArgs,
+    FSDPArgs
 )
 
 from sklearn.metrics import accuracy_score
@@ -30,7 +28,8 @@ from src.utils.print_utils import printw, printi, printe
 from src.utils.model_utils import (
     initialize_config,
     data_prepare,
-    generate_answer
+    generate_answer,
+    prepare_model_tokenmizer
 )
 
 LABEL_PAD_TOKEN_ID = -100
@@ -41,20 +40,17 @@ def run_inference(
         model_dir: str,
         model_args: ModelArgs,
         bnb_config: BitsAndBytesConfig,
-        target_name: str
+        target_name: str,
+        sft_training_args: SFTTrainingArgs
 ):
     printi("Starting Inference")
 
-    # 1) 모델 및 토크나이저 로드 (기존과 동일)
-
-    model = AutoModelForCausalLM.from_pretrained(
-        model_args.model_id.value,
-        attn_implementation="flash_attention_2" if model_args.use_flash_attn2 else "eager",
-        quantization_config=bnb_config,
-        device_map="auto" if not model_args.use_accelerate else None,
-        torch_dtype=model_args.dtype.value,
-        trust_remote_code=True,
-        low_cpu_mem_usage=True if not model_args.use_accelerate else False,
+    # 1) 모델 및 토크나이저 로드
+    model, tokenizer = prepare_model_tokenmizer(
+        model_args=model_args,
+        bnb_config=bnb_config,
+        is_train=False,
+        gradient_checkpointing=sft_training_args.gradient_checkpointing
     )
 
     adapter_dir = os.path.join(model_dir, model_args.load_model)
@@ -62,17 +58,6 @@ def run_inference(
         model,
         adapter_dir,
     )
-
-    model.eval()
-    model.config.use_cache = True
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.model_id.value,
-        trust_remote_code=True,
-        use_fast=True
-    )
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
 
     # 2) 답변 생성
     eot_token_id = tokenizer.convert_tokens_to_ids('<|eot_id|>')
@@ -117,7 +102,8 @@ def main(
     data_args: DataArgs,
     sft_training_args: SFTTrainingArgs,
     bits_and_bytes_args: BitsAndBytesArgs,
-    lora_args: LoraArgs
+    lora_args: LoraArgs,
+    fsdp_args: FSDPArgs
 ):
     global LABEL_PAD_TOKEN_ID
     LABEL_PAD_TOKEN_ID = data_args.label_pad_token_id
@@ -138,7 +124,8 @@ def main(
         system_args,
         bits_and_bytes_args,
         lora_args,
-        sft_training_args
+        sft_training_args,
+        fsdp_args
     )
 
     if system_args.train:
@@ -152,28 +139,12 @@ def main(
         printi("Starting Training")
 
         # 3) 모델, 토크나이저
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_args.model_id.value,
-            trust_remote_code=True,
-            use_fast=True
+        model, tokenizer = prepare_model_tokenmizer(
+            model_args=model_args,
+            bnb_config=bnb_config,
+            is_train=True,  # Training mode
+            gradient_checkpointing=sft_training_config.gradient_checkpointing
         )
-        if tokenizer.pad_token_id is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-        model = AutoModelForCausalLM.from_pretrained(
-            model_args.model_id.value,
-            torch_dtype=model_args.dtype.value,
-            attn_implementation="flash_attention_2" if model_args.use_flash_attn2 else "eager",
-            quantization_config=bnb_config,
-            device_map="auto" if not model_args.use_accelerate else None,
-            trust_remote_code=True,
-            low_cpu_mem_usage=True if not model_args.use_accelerate else False,
-        )
-
-        # model.gradient_checkpointing_enable()
-        if sft_training_args.gradient_checkpointing:
-            model.config.use_cache = False
-
 
         # 4) Trainer 설정
         trainer = SFTTrainer(
@@ -215,7 +186,8 @@ def main(
             model_dir=sft_training_config.output_dir,
             model_args=model_args,
             bnb_config=bnb_config,
-            target_name=target_name
+            target_name=target_name,
+            sft_training_args=sft_training_args
         )
         printi(f"Inference completed. Results saved in {sft_training_config.output_dir}/pred_result/{target_name}.json")
 
@@ -253,7 +225,8 @@ if __name__ == "__main__":
     sft_training_args = SFTTrainingArgs()
     bits_and_bytes_args = BitsAndBytesArgs()
     lora_args = LoraArgs()
+    fsdp_args = FSDPArgs()
     set_seed(system_args.seed)
     os.environ["HF_TOKEN"] = system_args.hf_token
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-    main(system_args, model_args, data_args, sft_training_args, bits_and_bytes_args, lora_args)
+    main(system_args, model_args, data_args, sft_training_args, bits_and_bytes_args, lora_args, fsdp_args)

@@ -1,24 +1,30 @@
 import os
 import torch
+from dataclasses import asdict
 from transformers import BitsAndBytesConfig
 from peft import LoraConfig
 from trl import SFTConfig
 from datasets import load_dataset
-
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+)
 from src.configs.config import (
     SystemArgs,
     SFTTrainingArgs,
     BitsAndBytesArgs,
     LoraArgs,
     DataArgs,
-    ModelArgs
+    ModelArgs,
+    FSDPArgs
 )
 
 def initialize_config(
     system_args: SystemArgs,
     bnb_args: BitsAndBytesArgs,
     lora_args: LoraArgs,
-    sft_training_args: SFTTrainingArgs
+    sft_training_args: SFTTrainingArgs,
+    fsdp_args: FSDPArgs,
 ):
     bnb_config = None
     lora_config = None
@@ -28,7 +34,9 @@ def initialize_config(
     if system_args.use_lora:
         lora_config = LoraConfig(**vars(lora_args))
 
+    sft_training_args.fsdp_config = asdict(fsdp_args)
     sft_training_config = SFTConfig(**vars(sft_training_args))
+
 
     return bnb_config, lora_config, sft_training_config
 
@@ -82,7 +90,7 @@ def generate_answer(
         do_sample=model_args.do_sample,
         max_new_tokens=model_args.max_new_tokens,
         eos_token_id=terminators,
-        pad_token_id=tokenizer.pad_token_id,
+        pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id,
         temperature=model_args.temperature,
         top_p=model_args.top_p,
         top_k=model_args.top_k,
@@ -104,3 +112,43 @@ def generate_answer(
         text = text.split("#", 1)[0].strip()
     return text
 
+
+
+def prepare_model_tokenmizer(
+    model_args: ModelArgs,
+    bnb_config: BitsAndBytesConfig,
+    is_train: bool = True,
+    gradient_checkpointing: bool = False,
+):
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_args.model_id.value,
+        torch_dtype=model_args.dtype.value,
+        attn_implementation="flash_attention_2" if model_args.use_flash_attn2 else "eager",
+        quantization_config=bnb_config,
+        device_map="auto" if not model_args.use_accelerate else None,
+        low_cpu_mem_usage=True if not model_args.use_accelerate else False,
+        trust_remote_code=True,
+    )
+
+    if is_train:
+        # gradient checkpointing 사용시 use_cache 사용 불가능
+        if gradient_checkpointing:
+            model.config.use_cache = False
+        else:
+            model.config.use_cache = True
+        model.train()
+    else:
+        model.config.use_cache = True
+        model.eval()
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.model_id.value,
+        trust_remote_code=True,
+        use_fast=True
+    )
+
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    return model, tokenizer

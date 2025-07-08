@@ -22,7 +22,8 @@ from src.utils.print_utils import printi, printe
 from src.utils.model_utils import (
     initialize_config,
     data_prepare,
-    generate_answer
+    generate_answer,
+    prepare_model_tokenmizer
 )
 from src.test.retriever import Retriever
 
@@ -30,18 +31,6 @@ LABEL_PAD_TOKEN_ID = -100
 
 
 
-def load_model_and_tokenizer(model_args, bnb_config):
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_id.value, use_fast=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_args.model_id.value,
-        attn_implementation="flash_attention_2" if model_args.use_flash_attn2 else "eager",
-        quantization_config=bnb_config,
-        device_map="auto",
-        torch_dtype=model_args.dtype.value,
-        trust_remote_code=True,
-        low_cpu_mem_usage=True,
-    )
-    return model, tokenizer
 
 def extract_question(user_msg):
     question_blocks = re.findall(r"\[질문\](.*?)(?=\[|$)", user_msg, re.DOTALL)
@@ -66,17 +55,42 @@ def generate_prompt_ids(tokenizer, messages):
         return_tensors="pt"
     )
 
-def run_rag_inference(model, tokenizer, retriever, sample, terminators, model_args):
+def run_rag_inference(
+    model,
+    tokenizer,
+    retriever,
+    sample,
+    terminators,
+    model_args,
+    top_k=5
+):
     user_msg = sample["messages"][-1]["content"]
     question = extract_question(user_msg)
     if question is None:
         printe(f"[질문] 항목을 찾을 수 없음: {sample.get('id', 'UNKNOWN')}")
         return None
 
-    retrieved = retriever.retrieve(question, top_k=5)
-    messages = prepare_prompt_with_rag(sample["messages"], question, retrieved)
-    prompt_ids = generate_prompt_ids(tokenizer, messages)
-    answer = generate_answer(model, tokenizer, prompt_ids[0], terminators, model_args)
+    retrieved = retriever.retrieve(question, top_k=top_k)
+
+    messages = prepare_prompt_with_rag(
+        sample["messages"],
+        question,
+        retrieved
+    )
+
+    prompt_ids = generate_prompt_ids(
+        tokenizer,
+        messages
+    )
+
+    answer = generate_answer(
+        model,
+        tokenizer,
+        prompt_ids[0],
+        terminators,
+        model_args
+    )
+
     return {"answer": answer}
 
 def save_results(results, save_dir, target_name):
@@ -119,24 +133,54 @@ def main(
         sft_training_args
     )
 
-    model, tokenizer = load_model_and_tokenizer(model_args, bnb_config)
-    model = PeftModel.from_pretrained(model, os.path.join(sft_training_config.output_dir, model_args.load_model))
+    model, tokenizer = prepare_model_tokenmizer(
+        model_args,
+        bnb_config,
+        is_train=False,  # Inference mode
+        is_gradient_checkpointing=sft_training_args.gradient_checkpointing
+    )
+
+    adapter_dir = os.path.join(sft_training_config.output_dir, model_args.load_model)
+    model = PeftModel.from_pretrained(
+        model,
+        adapter_dir,
+    )
+
     retriever = Retriever(rag_index_args)
 
-    data_dict = data_prepare(["test"], data_args)
+    data_dict = data_prepare(
+        ["test"],
+        data_args,
+        system_args,
+        model_args
+    )
+
     terminators = [tokenizer.eos_token_id]
     eot_id = tokenizer.convert_tokens_to_ids('<|eot_id|>')
     if eot_id: terminators.append(eot_id)
 
     results = []
     for sample in tqdm(data_dict["test"], desc="Inference with RAG"):
-        output = run_rag_inference(model, tokenizer, retriever, sample, terminators, model_args)
+        output = run_rag_inference(
+            model,
+            tokenizer,
+            retriever,
+            sample,
+            terminators,
+            model_args,
+            top_k=rag_index_args.top_k
+        )
+
         if output:
             sample_copy = sample.copy()
             sample_copy["output"] = output
             results.append(sample_copy)
 
-    save_results(results, os.path.join(sft_training_config.output_dir, "pred_result"), target_name)
+    save_results(
+        results,
+        os.path.join(sft_training_config.output_dir, system_args.result_save_dir_rag),
+        target_name
+    )
 
 
 

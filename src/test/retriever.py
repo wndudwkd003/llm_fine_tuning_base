@@ -38,7 +38,7 @@ class Retriever:
     def retrieve(self, query: str, top_k: int = 5):
         query_embedding = self.embedding_model.encode(
             [query],
-            convert_to_tensor=True,
+            convert_to_numpy=True,
             normalize_embeddings=True,
             device=self.device
         )
