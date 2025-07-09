@@ -34,25 +34,26 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = "merged_datasets_early_v1" # "merged_datasets_early_v1" # "default_dataset_early_stopping_v1"
+    additional_info: str = "test_datasets_early_v1" # "merged_datasets_early_v1" # "default_dataset_early_stopping_v1"
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
     backup_path: list[str] = field(default_factory=lambda: [
         "src/configs/config.py",
     ])
     use_lora: bool = True
-    use_qlora: bool = True
+    use_qlora: bool = False
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
     train: bool = True
     test: bool = False
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
+    dpo_dataset_create_mode: bool = True
 
 
 @dataclass
 class ModelArgs:
-    model_id: ModelId = ModelId.GEMMA2_27B
+    model_id: ModelId = ModelId.KANANA1_5_IT_8B
     dtype: DType = DType.BF16
     use_flash_attn2: bool = True
     max_new_tokens: int = 1024
@@ -67,9 +68,9 @@ class ModelArgs:
         "사용자의 질문에 대해 친절하게 답변해주세요. 단, 동일한 문장을 절대 반복하지 마시오."
     )
     use_system_prompt: bool = True
-    early_stopping: int = 5
-    load_model: str = "lora_adapter" # "lora_adapter"
+    early_stopping: int = 10
     use_accelerate: bool = False
+    load_model: str = "lora_adapter" # "lora_adapter"
 
 
 @dataclass
@@ -77,18 +78,21 @@ class DataArgs:
     pad_to_multiple_of: int | None = None
     label_pad_token_id: int = -100
     # data_dir: str = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
-    data_dir: str = "datasets/merged_dataset_no_aug_v1_refined"
+    data_dir: str = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
 
 
 @dataclass
 class LoraArgs:
     task_type: TaskType = TaskType.CAUSAL_LM
-    r: int = 32
-    lora_alpha: int = 32
+    r: int = 64
+    lora_alpha: int = 64
     lora_dropout: float = 0.05
-    target_modules: list[str] | str = field(default_factory=lambda: [
-        'q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj', 'lm_head'
-    ])
+    target_modules: list[str] | str = "all-linear"
+
+
+    # field(default_factory=lambda: [
+    #     'q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj', 'lm_head'
+    # ])
     #  "all-linear"
     bias: str = "none"  # or "all", "lora_only"
 
@@ -104,13 +108,13 @@ class BitsAndBytesArgs:
 @dataclass
 class SFTTrainingArgs:
     output_dir: str = "output"
-    num_train_epochs: int = 3                # Epochs to train the model
+    num_train_epochs: int = 5                # Epochs to train the model
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     eval_accumulation_steps: int = 1
     gradient_accumulation_steps: int = GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
-    eval_strategy: str = "steps" # "no", "epoch", "steps"
-    save_strategy: str = "steps" # "no", "epoch", "steps"
+    eval_strategy: str = "epoch" # "no", "epoch", "steps"
+    save_strategy: str = "epoch" # "no", "epoch", "steps"
     eval_steps: int | None = 400 # 100
     save_steps: int | None = 400 # 100
     logging_steps: int = 50
@@ -125,15 +129,13 @@ class SFTTrainingArgs:
     bf16: bool = True
     packing: bool = False
     max_length: int = 4096
-    gradient_checkpointing: bool = False
+    gradient_checkpointing: bool = True
     activation_offloading: bool = False
     label_names: list[str] = field(default_factory=lambda: ["labels"])
     load_best_model_at_end: bool = True
     metric_for_best_model: str = "eval_loss"
     greater_is_better: bool = False
     optim: str = "adamw_torch" # "adamw_torch" is default, adamw_hf or "adamw_8bit" or "paged_adamw_8bit"
-    fsdp: bool | str = "full_shard auto_wrap"
-    fsdp_config: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -157,11 +159,11 @@ class RAGIndexArgs:
 
 
 
-@dataclass
-class FSDPArgs:
-    backward_prefetch: str = "backward_pre"
-    forward_prefetch: bool = False
-    use_orig_params: bool = False
-    sync_module_states: bool = True
-    cpu_ram_efficient_loading: bool = True
-    activation_checkpointing: bool = True
+# @dataclass
+# class FSDPArgs:
+#     backward_prefetch: str = "backward_pre"
+#     forward_prefetch: bool = False
+#     use_orig_params: bool = False
+#     sync_module_states: bool = True
+#     cpu_ram_efficient_loading: bool = True
+#     activation_checkpointing: bool = True

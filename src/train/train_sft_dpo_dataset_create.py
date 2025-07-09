@@ -6,8 +6,7 @@ from transformers import (
     BitsAndBytesConfig,
     EarlyStoppingCallback,
 )
-from datasets import Dataset
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 from peft import PeftModel
 from src.configs.config import (
     SystemArgs,
@@ -32,15 +31,18 @@ from src.utils.model_utils import (
     generate_answer,
     prepare_model_tokenmizer
 )
-from src.utils.qa_dataset import DataCollatorForSupervisedDataset
+from src.utils.dpo_dataset_utils import create_dpo_dataset
+
+LABEL_PAD_TOKEN_ID = -100
 
 
 def run_inference(
+        test_dataset,
         model_dir: str,
         model_args: ModelArgs,
         bnb_config: BitsAndBytesConfig,
         target_name: str,
-        sft_training_args: SFTTrainingArgs,
+        sft_training_args: SFTTrainingArgs
 ):
     printi("Starting Inference")
 
@@ -52,14 +54,6 @@ def run_inference(
         gradient_checkpointing=sft_training_args.gradient_checkpointing
     )
 
-    data_dict = data_prepare(
-            ["test"],
-            data_args,
-            model_args,
-            tokenizer
-        )
-
-
     adapter_dir = os.path.join(model_dir, model_args.load_model)
     model = PeftModel.from_pretrained(
         model,
@@ -68,33 +62,31 @@ def run_inference(
 
     # 2) 답변 생성
     eot_token_id = tokenizer.convert_tokens_to_ids('<|eot_id|>')
-    terminators = [tokenizer.eos_token_id]
-
-    # eot_token_id가 유효한 경우에만 추가
-    if eot_token_id is not None and eot_token_id != tokenizer.unk_token_id:
-        terminators.append(eot_token_id)
+    terminators = [tokenizer.eos_token_id] if eot_token_id is None else [tokenizer.eos_token_id, eot_token_id]
 
     results = []
-    for idx, sample in enumerate(tqdm(data_dict["test"], desc="Inference")):
-        original_sample = sample.get_original_data(idx)
-        sample_id = original_sample["id"]
+    for example in tqdm(test_dataset, desc="Inference"):
+        prompt_ids = tokenizer.apply_chat_template(
+            conversation=example['messages'],
+            tokenize=True,
+            truncation=True,
+            padding="max_length",
+            max_length=sft_training_args.max_length,
+            add_generation_prompt=True,
+            return_tensors="pt"
+        )
 
         answer_text = generate_answer(
             model,
             tokenizer,
-            sample["input_ids"],
+            prompt_ids[0],
             terminators,
             model_args=model_args,
         )
 
-        result = {
-            "id": sample_id,
-            "output": {
-                "answer": answer_text
-            }
-        }
-
-        results.append(result)
+        new_example = example.copy()
+        new_example['output'] = {'answer': answer_text}
+        results.append(new_example)
 
     # 3) 파일 저장
     save_dir = os.path.join(model_dir, "pred_result")
@@ -117,6 +109,9 @@ def main(
     lora_args: LoraArgs,
     # fsdp_args: FSDPArgs
 ):
+    global LABEL_PAD_TOKEN_ID
+    LABEL_PAD_TOKEN_ID = data_args.label_pad_token_id
+
     # 0) 저장 경로 및 백업 설정
     output_dir, target_name = create_out_dir(
         sft_training_args.output_dir,
@@ -138,7 +133,72 @@ def main(
     )
 
 
+    # DPO 데이터셋 생성 모드
+    if system_args.dpo_dataset_create_mode:
+        printi("Running in DPO dataset creation mode.")
+
+        # 1. 새로운 저장 경로 생성
+        dpo_data_dir = data_args.data_dir + "_for_dpo"
+        os.makedirs(dpo_data_dir, exist_ok=True)
+        printi(f"DPO datasets will be saved in: {dpo_data_dir}")
+
+        # 2. 추론에 사용할 모델과 토크나이저 로드
+        model, tokenizer = prepare_model_tokenmizer(
+            model_args=model_args,
+            bnb_config=bnb_config,
+            is_train=False,
+            gradient_checkpointing=sft_training_args.gradient_checkpointing
+        )
+        adapter_dir = os.path.join(sft_training_args.output_dir, model_args.load_model)
+        if os.path.exists(adapter_dir):
+            printi(f"Loading adapter from: {adapter_dir}")
+            model = PeftModel.from_pretrained(model, adapter_dir)
+
+        # 3. 원본 데이터셋(train, dev) 로드
+        data_dict = data_prepare(
+            ["train", "dev"],
+            data_args,
+            system_args,
+            sft_training_args,
+            model_args
+        )
+
+        # 4. train, dev 데이터셋에 대해 DPO 데이터 생성
+        for split in ["train", "dev"]:
+            output_file = os.path.join(dpo_data_dir, f"{split}.json")
+            create_dpo_dataset(
+                source_dataset=data_dict[split],
+                model=model,
+                tokenizer=tokenizer,
+                model_args=model_args,
+                sft_training_args=sft_training_args,
+                output_path=output_file
+            )
+
+        # 5. test.json 복사
+        original_test_path = os.path.join(data_args.data_dir, "test.json")
+        dpo_test_path = os.path.join(dpo_data_dir, "test.json")
+        if os.path.exists(original_test_path):
+            import shutil
+            shutil.copy(original_test_path, dpo_test_path)
+            printi(f"Copied original test set to: {dpo_test_path}")
+        else:
+            printw(f"Original test set not found at: {original_test_path}")
+
+
+        printi("Finished DPO dataset creation.")
+        return # 데이터 생성 후 종료
+
+
     if system_args.train:
+        data_dict = data_prepare(
+            ["train", "dev"],
+            data_args,
+            system_args,
+            sft_training_args,
+            model_args
+        )
+
         printi("Starting Training")
 
         # 3) 모델, 토크나이저
@@ -149,33 +209,17 @@ def main(
             gradient_checkpointing=sft_training_config.gradient_checkpointing
         )
 
-        data_dict = data_prepare(
-            ["train", "dev"],
-            data_args,
-            model_args,
-            tokenizer
-        )
-
-        train_dataset_hf = Dataset.from_dict({
-            "input_ids": [item['input_ids'] for item in data_dict["train"]],
-            "labels": [item['labels'] for item in data_dict["train"]],
-        })
-
-        eval_dataset_hf = Dataset.from_dict({
-            "input_ids": [item['input_ids'] for item in data_dict["dev"]],
-            "labels": [item['labels'] for item in data_dict["dev"]],
-        })
-
 
         # 4) Trainer 설정
         trainer = SFTTrainer(
             model=model,
             args=sft_training_config,
-            train_dataset=train_dataset_hf,
-            eval_dataset=eval_dataset_hf,
+            train_dataset=data_dict["train"],
+            eval_dataset=data_dict["dev"],
+            processing_class=tokenizer,
             peft_config=lora_config,
             preprocess_logits_for_metrics=logits_to_cpu,
-            data_collator=DataCollatorForSupervisedDataset(tokenizer),
+            compute_metrics=compute_metrics,
             callbacks=[EarlyStoppingCallback(
                 early_stopping_patience=model_args.early_stopping,
                 early_stopping_threshold=0.0
@@ -192,15 +236,23 @@ def main(
         printi(f"Model trained and saved to {adapter_dir}")
         printi(f"Training finished. Model saved to: {sft_training_config.output_dir}")
 
-    # 추론
+    # 5) 추론 (system_args.test가 True일 때 실행)
     if system_args.test:
+        data_dict = data_prepare(
+            ["test"],
+            data_args,
+            system_args,
+            sft_training_args,
+            model_args
+        )
+
         run_inference(
+            test_dataset=data_dict["test"],
             model_dir=sft_training_config.output_dir,
             model_args=model_args,
             bnb_config=bnb_config,
             target_name=target_name,
-            sft_training_args=sft_training_args,
-
+            sft_training_args=sft_training_args
         )
         printi(f"Inference completed. Results saved in {sft_training_config.output_dir}/pred_result/{target_name}.json")
 
@@ -212,7 +264,23 @@ def logits_to_cpu(logits, labels):
     preds = torch.argmax(logits, dim=-1).cpu().to(torch.int32)
     return preds, labels.cpu()
 
+def compute_metrics(eval_preds):
+    preds_nested, labels_nested = eval_preds  # object 배열 또는 (steps, batch, seq)
 
+    preds  = np.concatenate([np.asarray(p).ravel() for p in preds_nested])
+    labels = np.concatenate([np.asarray(l).ravel() for l in labels_nested])
+
+    if preds.size != labels.size:
+        min_len = min(preds.size, labels.size)
+        preds  = preds[:min_len]
+        labels = labels[:min_len]
+
+    mask = labels != LABEL_PAD_TOKEN_ID
+    if not mask.any():
+        return {"accuracy": 0.0}
+
+    acc = accuracy_score(labels[mask], preds[mask])
+    return {"accuracy": acc}
 
 
 if __name__ == "__main__":

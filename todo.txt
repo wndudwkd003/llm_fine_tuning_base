@@ -8,3 +8,9 @@ https://ko-nlp.github.io/Korpora/ko-docs/corpuslist/kowikitext.html
 
 # korean namu wiki
 https://ko-nlp.github.io/Korpora/ko-docs/corpuslist/namuwikitext.html
+
+
+ACCELERATE_USE_FSDP=1 FSDP_CPU_RAM_EFFICIENT_LOADING=1 \
+torchrun --nproc_per_node=4 \
+./train.py \
+--config fsdp.yaml

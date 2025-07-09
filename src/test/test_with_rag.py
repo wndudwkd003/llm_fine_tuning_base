@@ -152,6 +152,7 @@ def main(
         ["test"],
         data_args,
         system_args,
+        sft_training_args,
         model_args
     )
 

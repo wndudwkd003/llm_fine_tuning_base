@@ -50,7 +50,7 @@ TYPE_INSTRUCTIONS = {
 import os
 import json
 
-SOURCE_DATA_DIR = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
+SOURCE_DATA_DIR = "datasets/merged_dataset_v1"
 
 TARGET_DATA_DIR = SOURCE_DATA_DIR + "_refined"
 
