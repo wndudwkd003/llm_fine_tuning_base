@@ -172,7 +172,7 @@ def prepare_model_tokenmizer(
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_id.value,
         trust_remote_code=True,
-        use_fast=True
+        use_fast=True,
     )
 
     if tokenizer.pad_token_id is None:

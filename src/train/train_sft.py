@@ -167,6 +167,13 @@ def main(
         })
 
 
+        # Early Stopping 설정
+        early_stopping_callback = [EarlyStoppingCallback(
+            early_stopping_patience=model_args.early_stopping,
+            early_stopping_threshold=0.0
+        )] if model_args.early_stopping != False else None
+
+
         # 4) Trainer 설정
         trainer = SFTTrainer(
             model=model,
@@ -176,10 +183,7 @@ def main(
             peft_config=lora_config,
             preprocess_logits_for_metrics=logits_to_cpu,
             data_collator=DataCollatorForSupervisedDataset(tokenizer),
-            callbacks=[EarlyStoppingCallback(
-                early_stopping_patience=model_args.early_stopping,
-                early_stopping_threshold=0.0
-            )]
+            callbacks=early_stopping_callback
         )
 
         # 5) 모델 학습

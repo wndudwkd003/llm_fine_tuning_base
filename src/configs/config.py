@@ -34,7 +34,7 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = "test_datasets_early_v1" # "merged_datasets_early_v1" # "default_dataset_early_stopping_v1"
+    additional_info: str = "merge_datasets_early_v3" # "merged_datasets_early_v1" # "default_dataset_early_stopping_v1"
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
     backup_path: list[str] = field(default_factory=lambda: [
@@ -44,8 +44,8 @@ class SystemArgs:
     use_qlora: bool = False
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
-    train: bool = False
-    test: bool = True
+    train: bool = True
+    test: bool = False
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
     dpo_dataset_create_mode: bool = True
@@ -56,7 +56,7 @@ class ModelArgs:
     model_id: ModelId = ModelId.KANANA1_5_IT_8B
     dtype: DType = DType.BF16
     use_flash_attn2: bool = True
-    max_new_tokens: int = 1024
+    max_new_tokens: int = 2048
     do_sample: bool = True
     top_k: int = 50
     top_p: float = 0.8
@@ -68,7 +68,7 @@ class ModelArgs:
         "사용자의 질문에 대해 친절하게 답변해주세요. 단, 동일한 문장을 절대 반복하지 마시오."
     )
     use_system_prompt: bool = True
-    early_stopping: int = 10
+    early_stopping: int | bool = False # 10
     use_accelerate: bool = False
     load_model: str = "lora_adapter" # "lora_adapter"
 
@@ -78,7 +78,7 @@ class DataArgs:
     pad_to_multiple_of: int | None = None
     label_pad_token_id: int = -100
     # data_dir: str = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
-    data_dir: str = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
+    data_dir: str = "datasets/merged_dataset_v1"
 
 
 @dataclass
@@ -113,8 +113,8 @@ class SFTTrainingArgs:
     per_device_eval_batch_size: int = 1
     eval_accumulation_steps: int = 1
     gradient_accumulation_steps: int = GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
-    eval_strategy: str = "epoch" # "no", "epoch", "steps"
-    save_strategy: str = "epoch" # "no", "epoch", "steps"
+    eval_strategy: str = "steps" # "no", "epoch", "steps"
+    save_strategy: str = "steps" # "no", "epoch", "steps"
     eval_steps: int | None = 400 # 100
     save_steps: int | None = 400 # 100
     logging_steps: int = 50

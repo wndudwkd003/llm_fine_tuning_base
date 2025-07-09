@@ -2,6 +2,7 @@ import json
 import os
 import torch
 from torch.utils.data import Dataset
+from tqdm.auto import tqdm
 
 # question type별 instruction 정의
 TYPE_INSTRUCTIONS = {
@@ -91,7 +92,7 @@ class CustomDataset(Dataset):
 
             return chat
 
-        for example in data:
+        for example in tqdm(data, desc="Loading dataset", unit="example"):
             self.ids.append(example.get("id", ""))
 
             user_prompt = make_chat(example["input"])
@@ -101,11 +102,13 @@ class CustomDataset(Dataset):
             ]
             if False: print(f'[DBG] message: {message}')
 
+            print("tokenizer.model_max_length: ", tokenizer.model_max_length)
+
             source = tokenizer.apply_chat_template(
                 message,
                 add_generation_prompt=True,
                 return_tensors="pt",
-                enable_thinking=False
+                enable_thinking=False,
             )
 
             target = example.get("output", "")
