@@ -59,6 +59,7 @@ class CustomDataset(Dataset):
 
         self.inp = []
         self.label = []
+        self.ids = []
 
 
         with open(fname, "r") as f:
@@ -91,6 +92,8 @@ class CustomDataset(Dataset):
             return chat
 
         for example in data:
+            self.ids.append(example.get("id", ""))
+
             user_prompt = make_chat(example["input"])
             message = [
                 {"role": "system", "content": self.prompt},
@@ -106,6 +109,7 @@ class CustomDataset(Dataset):
             )
 
             target = example.get("output", "")
+            target_text = ""
             # print("[DBG] target:", target)
 
             if target != "":
@@ -130,6 +134,7 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, idx):
         return {
+            "id":       self.ids[idx],
             "input_ids": self.inp[idx],
             "labels":   self.label[idx]
         }

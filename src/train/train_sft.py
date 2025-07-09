@@ -75,14 +75,14 @@ def run_inference(
         terminators.append(eot_token_id)
 
     results = []
-    for idx, sample in enumerate(tqdm(data_dict["test"], desc="Inference")):
-        original_sample = sample.get_original_data(idx)
-        sample_id = original_sample["id"]
+    for sample in tqdm(data_dict["test"], desc="Inference"):
+        sample_id = sample["id"]
+        input_ids = sample["input_ids"]
 
         answer_text = generate_answer(
             model,
             tokenizer,
-            sample["input_ids"],
+            input_ids,
             terminators,
             model_args=model_args,
         )

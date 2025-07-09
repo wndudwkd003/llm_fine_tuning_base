@@ -162,6 +162,7 @@ def main(
 
     results = []
     for sample in tqdm(data_dict["test"], desc="Inference with RAG"):
+        
         output = run_rag_inference(
             model,
             tokenizer,

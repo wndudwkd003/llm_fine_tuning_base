@@ -44,8 +44,8 @@ class SystemArgs:
     use_qlora: bool = False
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
-    train: bool = True
-    test: bool = False
+    train: bool = False
+    test: bool = True
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
     dpo_dataset_create_mode: bool = True
