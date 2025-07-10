@@ -67,12 +67,10 @@ def run_inference(
     )
 
     # 2) 답변 생성
-    eot_token_id = tokenizer.convert_tokens_to_ids('<|eot_id|>')
-    terminators = [tokenizer.eos_token_id]
-
-    # eot_token_id가 유효한 경우에만 추가
-    if eot_token_id is not None and eot_token_id != tokenizer.unk_token_id:
-        terminators.append(eot_token_id)
+    terminators = [
+        tokenizer.eos_token_id,
+        tokenizer.convert_tokens_to_ids("<|eot_id|>") if tokenizer.convert_tokens_to_ids("<|eot_id|>") else tokenizer.convert_tokens_to_ids("<|endoftext|>")
+    ]
 
     results = []
     for sample in tqdm(data_dict["test"], desc="Inference"):

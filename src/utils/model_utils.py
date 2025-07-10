@@ -90,7 +90,8 @@ def data_prepare(
             fname=data_file,
             tokenizer=tokenizer,
             igonore_index=data_args.label_pad_token_id,
-            prompt=model_args.prompt_template
+            prompt=model_args.prompt_template,
+            use_system_prompt=model_args.use_system_prompt
         )
         data_dict[split] = dataset
     return data_dict
@@ -166,7 +167,7 @@ def prepare_model_tokenmizer(
         model.eval()
 
 
-    model.config.torch_dtype = model_args.dtype.value
+    # model.config.torch_dtype = model_args.dtype.value
 
 
     tokenizer = AutoTokenizer.from_pretrained(

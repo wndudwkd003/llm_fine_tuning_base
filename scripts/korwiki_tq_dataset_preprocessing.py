@@ -1,18 +1,31 @@
 import os, json
 from sklearn.model_selection import train_test_split
 
+def format_tbl_as_text(tbl: list) -> str:
+    if not tbl or len(tbl) < 2:
+        return ""
+    headers = tbl[0]
+    rows = tbl[1:]
+    formatted_rows = []
+    for row in rows:
+        cells = [f"{headers[i]}: {row[i]}" for i in range(min(len(headers), len(row)))]
+        formatted_rows.append(", ".join(cells) + ".")
+    return " ".join(formatted_rows)
+
 def convert_to_dataset_format(item):
-    """주어진 item을 새로운 데이터셋 포맷으로 변환합니다."""
-    context = item.get("context", "")
-    question = item.get("question", "")
-    answer_text = item.get("answers", {}).get("text", [""])[0]
+    context = format_tbl_as_text(item.get("TBL", []))
+    question = item.get("QAS", {}).get("question", "")
+    answer_text = item.get("QAS", {}).get("answer", "")
+    document_title = item.get("T", "")
+    question_id = item.get("QAS", {}).get("qid", "")
+
     new_question = f"{question} [배경] {context}"
 
     return {
-        "id": item.get("id", ""),
+        "id": question_id,
         "input": {
             "category": "",
-            "domain": "",
+            "domain": document_title,
             "question_type": "단답형",
             "topic_keyword": "",
             "question": new_question,
@@ -23,25 +36,25 @@ def convert_to_dataset_format(item):
     }
 
 if __name__ == "__main__":
-    data_dir = "datasets/squad_kor_v1"
-    target_dir = "datasets/squad_kor_v1_converted"
+    data_dir = "datasets/KorWikiTQ_ko"
+    target_dir = data_dir + "_converted"
     os.makedirs(target_dir, exist_ok=True)
 
-    # train.json과 validation.json 병합
     merged_data = []
-    for file_name in ["train.json", "validation.json"]:
+    for file_name in ["train.json", "dev.json"]:
         with open(os.path.join(data_dir, file_name), "r", encoding="utf-8") as f:
             data = json.load(f)
-            merged_data.extend(data)
+            if isinstance(data, dict) and "data" in data:
+                merged_data.extend(data["data"])
+            else:
+                raise ValueError(f"{file_name}의 형식이 잘못되었습니다: 'data' 키가 없음")
 
-    # 9:1 비율로 분할
+
     train_data, dev_data = train_test_split(merged_data, test_size=0.1, random_state=42)
 
-    # 변환
     converted_train = [convert_to_dataset_format(item) for item in train_data]
     converted_dev = [convert_to_dataset_format(item) for item in dev_data]
 
-    # 저장
     with open(os.path.join(target_dir, "train.json"), "w", encoding="utf-8") as f:
         json.dump(converted_train, f, ensure_ascii=False, indent=4)
         print(f"Saved train.json to {target_dir} ({len(converted_train)}개)")

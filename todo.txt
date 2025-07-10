@@ -1,16 +1,11 @@
-
-
-
-# korean wiki
-https://ko-nlp.github.io/Korpora/ko-docs/corpuslist/kowikitext.html
-
-
-
-# korean namu wiki
-https://ko-nlp.github.io/Korpora/ko-docs/corpuslist/namuwikitext.html
-
-
-ACCELERATE_USE_FSDP=1 FSDP_CPU_RAM_EFFICIENT_LOADING=1 \
-torchrun --nproc_per_node=4 \
-./train.py \
---config fsdp.yaml
+sub_3_data_korean_culture_qa_V1.0_preprocessed
+CLIcK_converted
+KoAlpaca-v1.1a_converted
+squad_kor_v1_converted
+tydiqa-goldp_converted
+KorWikiTQ_ko_converted
+KMMLU_converted
+etri_mrc_converted
+etri_qa_a_converted
+etri_qa_b_converted
+etri_qa_c_converted

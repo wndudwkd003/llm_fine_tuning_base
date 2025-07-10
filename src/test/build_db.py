@@ -10,15 +10,52 @@ from src.data.record import Metadata
 hdr_pat = re.compile(r'^\s*=+\s*(.+?)\s*=+\s*$', re.MULTILINE)
 bullet_pat = re.compile(r'^\s*[•\-\–·\*]\s+', re.MULTILINE)
 blank_pat = re.compile(r'\n{2,}')
-doc_hdr_pat = re.compile(r'^\s*=+\s*(.+?)\s*=+')
 
 def clean(txt: str) -> str:
-    txt = hdr_pat.sub(r'[SECTION]\1', txt)
+    # 줄 단위로 헤더 정제
+    lines = txt.split('\n')
+    lines = [hdr_pat.sub(r'[SECTION]\1', line) for line in lines]
+    txt = '\n'.join(lines)
+
+    # [SECTION]= = 제목 = = → [SECTION]제목  로 정리
+    txt = re.sub(r'\[SECTION\][\s=]*([\w가-힣A-Za-z0-9 _\-()]+)[\s=]*', r'[SECTION]\1', txt)
+
     txt = bullet_pat.sub('', txt)
     txt = blank_pat.sub('\n', txt)
     return txt.strip()
 
+
+
+
+def load_documents(path: str) -> list[tuple[str, str]]:
+    documents = []
+    current_title = None
+    current_body = []
+
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            # level-1 제목을 문서 시작 신호로 사용
+            if re.match(r'^\s*=+\s*[^=]+?\s*=+\s*$', line):
+                if current_title and current_body:
+                    documents.append((current_title, "\n".join(current_body).strip()))
+                    current_body = []
+                current_title = re.sub(r'^\s*=+\s*|\s*=+\s*$', '', line).strip()
+            else:
+                current_body.append(line)
+
+    if current_title and current_body:
+        documents.append((current_title, "\n".join(current_body).strip()))
+
+    return documents
+
+
 def main(rag_index_args: RAGIndexArgs):
+    # max_chunks = 100
+
     os.makedirs(rag_index_args.index_dir, exist_ok=True)
 
     splitter = RecursiveCharacterTextSplitter(
@@ -43,31 +80,31 @@ def main(rag_index_args: RAGIndexArgs):
             if not os.path.isfile(path):
                 continue
 
-            with open(path, encoding="utf-8") as f:
-                for line in tqdm(f, desc=f"{c_name}-{ext}", unit="docs"):
-                    if not line.strip():
-                        continue
+            documents = load_documents(path)
+            for title, body in tqdm(documents, desc=f"{c_name}-{ext}", unit="docs"):
+                clean_body = clean(body)
+                if not clean_body:
+                    continue
 
-                    m = doc_hdr_pat.match(line)
-                    if not m:
-                        continue
-
-                    title = m.group(1).strip()
-                    body = clean(line[m.end():].lstrip())
-
-                    if not body:
-                        continue
-
-                    for ch in splitter.split_text(body):
-                        chunks.append(ch)
-                        metas.append(Metadata(
-                            corpus=c_name,
-                            split=ext,
-                            title=title,
-                            text=ch,
-                        ))
+                for ch in splitter.split_text(clean_body):
+                    chunks.append(ch)
+                    metas.append(Metadata(
+                        corpus=c_name,
+                        split=ext,
+                        title=title,
+                        text=ch
+                    ))
+        #             if len(chunks) >= max_chunks:
+        #                 break
+        #         if len(chunks) >= max_chunks:
+        #             break
+        #     if len(chunks) >= max_chunks:
+        #         break
+        # if len(chunks) >= max_chunks:
+        #     break
 
         printi(f"Loaded {len(chunks)} records and {len(metas)} metas from {c_name} corpus\n")
+
 
     # embedding
     printi(f"Embedding {len(chunks):,} chunks…")

@@ -2,17 +2,18 @@ import os, json
 from sklearn.model_selection import train_test_split
 
 def convert_to_dataset_format(item):
-    """주어진 item을 새로운 데이터셋 포맷으로 변환합니다."""
-    context = item.get("context", "")
-    question = item.get("question", "")
+    context = item.get("passage_text", "")
+    question = item.get("question_text", "")
     answer_text = item.get("answers", {}).get("text", [""])[0]
+    document_title = item.get("document_title", "")
+
     new_question = f"{question} [배경] {context}"
 
     return {
         "id": item.get("id", ""),
         "input": {
             "category": "",
-            "domain": "",
+            "domain": document_title,
             "question_type": "단답형",
             "topic_keyword": "",
             "question": new_question,
@@ -23,18 +24,18 @@ def convert_to_dataset_format(item):
     }
 
 if __name__ == "__main__":
-    data_dir = "datasets/squad_kor_v1"
-    target_dir = "datasets/squad_kor_v1_converted"
+    data_dir = "datasets/tydiqa-goldp"
+    target_dir = data_dir + "_converted"
     os.makedirs(target_dir, exist_ok=True)
 
     # train.json과 validation.json 병합
     merged_data = []
-    for file_name in ["train.json", "validation.json"]:
+    for file_name in ["train.json", "dev.json"]:
         with open(os.path.join(data_dir, file_name), "r", encoding="utf-8") as f:
             data = json.load(f)
             merged_data.extend(data)
 
-    # 9:1 비율로 분할
+    # 9:1 분할
     train_data, dev_data = train_test_split(merged_data, test_size=0.1, random_state=42)
 
     # 변환

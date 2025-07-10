@@ -2,8 +2,8 @@ from datasets import load_dataset, get_dataset_config_names
 import os
 import json
 
-DATASET_ID = "tau/commonsense_qa"
-OUT_DIR = "datasets/commonsense_qa"
+DATASET_ID = "khalidalt/tydiqa-goldp"
+OUT_DIR = "datasets/tydiqa-goldp"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # 이 데이터셋에서 사용 가능한 모든 config 이름 목록을 가져옵니다.

@@ -6,20 +6,18 @@ from typing import Any
 from enum import Enum
 from peft import TaskType
 
-GLOBAL_BATCH_SIZE = 4
+GLOBAL_BATCH_SIZE = 2
 NUM_DEVICES = 1
 
-
+# tensorboard --log_dir ~ --port 6006
 class ModelId(Enum):
     """
     모델 ID를 정의하는 Enum 클래스입니다.
     """
-    #EXAONE3_5_IT_7_8B = "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct"
+    EXAONE3_5_IT_7_8B = "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct"
     #EXAONE3_5_IT_32B = "LGAI-EXAONE/EXAONE-3.5-32B-Instruct"
     #QWEN2_5_LEAD_14B = "v000000/Qwen2.5-14B-Gutenberg-1e-Delta"
     KANANA1_5_IT_8B = "kakaocorp/kanana-1.5-8b-instruct-2505"
-    GEMMA2_27B = "nbeerbower/gemma2-gutenberg-27B"
-    LLAMA3_8B = "SEOKDONG/llama3.1_korean_v1.1_sft_by_aidx"
 
 class DType(Enum):
     """
@@ -34,7 +32,7 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = "merge_datasets_early_v3" # "merged_datasets_early_v1" # "default_dataset_early_stopping_v1"
+    additional_info: str = "merge_no_aug_datasets_early_r_64_dosample_o_epoch_max_length_x_b_2"
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
     backup_path: list[str] = field(default_factory=lambda: [
@@ -48,7 +46,7 @@ class SystemArgs:
     test: bool = False
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
-    dpo_dataset_create_mode: bool = True
+    dpo_dataset_create_mode: bool = False
 
 
 @dataclass
@@ -58,19 +56,20 @@ class ModelArgs:
     use_flash_attn2: bool = True
     max_new_tokens: int = 2048
     do_sample: bool = True
-    top_k: int = 50
     top_p: float = 0.8
+    top_k: int = 50
     temperature: float = 0.7
     repetition_penalty: float = 1.05
     prompt_template: str = (
-        "You are a helpful AI assistant. Please answer the user's questions kindly. "
+        "You are a helpful AI assistant. Please answer the user's questions kindly. Think about it step by step. "
+        "당신은 도움이 되는 어시스턴트입니다. "
         "당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 대해 잘 알고 있는 유능한 AI 어시스턴트 입니다. "
         "사용자의 질문에 대해 친절하게 답변해주세요. 단, 동일한 문장을 절대 반복하지 마시오."
     )
     use_system_prompt: bool = True
-    early_stopping: int | bool = False # 10
+    early_stopping: int | bool = 5 # 5
     use_accelerate: bool = False
-    load_model: str = "lora_adapter" # "lora_adapter"
+    load_model: str = "final" # "lora_adapter"
 
 
 @dataclass
@@ -78,7 +77,7 @@ class DataArgs:
     pad_to_multiple_of: int | None = None
     label_pad_token_id: int = -100
     # data_dir: str = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
-    data_dir: str = "datasets/merged_dataset_v1"
+    data_dir: str = "datasets/merged_dataset_no_aug_v1"
 
 
 @dataclass
@@ -86,13 +85,12 @@ class LoraArgs:
     task_type: TaskType = TaskType.CAUSAL_LM
     r: int = 64
     lora_alpha: int = 64
-    lora_dropout: float = 0.05
-    target_modules: list[str] | str = "all-linear"
+    lora_dropout: float = 0.0 # 0.05
+    # target_modules: list[str] | str = "all-linear"
+    target_modules: list[str] | str = field(default_factory=lambda: [
+        'q_proj','k_proj','v_proj','o_proj' # ,'gate_proj','down_proj','up_proj', 'lm_head'
+    ])
 
-
-    # field(default_factory=lambda: [
-    #     'q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj', 'lm_head'
-    # ])
     #  "all-linear"
     bias: str = "none"  # or "all", "lora_only"
 
@@ -109,26 +107,26 @@ class BitsAndBytesArgs:
 class SFTTrainingArgs:
     output_dir: str = "output"
     num_train_epochs: int = 5                # Epochs to train the model
-    per_device_train_batch_size: int = 1
-    per_device_eval_batch_size: int = 1
+    per_device_train_batch_size: int = 2
+    per_device_eval_batch_size: int = 2
     eval_accumulation_steps: int = 1
     gradient_accumulation_steps: int = GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
     eval_strategy: str = "steps" # "no", "epoch", "steps"
     save_strategy: str = "steps" # "no", "epoch", "steps"
-    eval_steps: int | None = 400 # 100
-    save_steps: int | None = 400 # 100
+    eval_steps: int | None = 1000 # 100
+    save_steps: int | None = 1000 # 100
     logging_steps: int = 50
-    learning_rate: float = 1e-4
+    learning_rate: float = 2e-5
     weight_decay: float = 0.1
     warmup_ratio: float = 0.03
     lr_scheduler_type: str = "cosine"
     save_total_limit: int = 1
     logging_dir: str = "logs"
-    report_to: list[str] | None = None # field(default_factory=lambda: ["tensorboard"])
+    report_to: list[str] | None = field(default_factory=lambda: ["tensorboard"])
     fp16: bool = False
     bf16: bool = True
     packing: bool = False
-    max_length: int = 4096
+    # max_length: int = 4096
     gradient_checkpointing: bool = True
     activation_offloading: bool = False
     label_names: list[str] = field(default_factory=lambda: ["labels"])
@@ -146,16 +144,21 @@ class RAGIndexArgs:
             "base": "20200302",
             "ext": ["train", "dev", "test"]
         },
+        {
+            "dir": "datasets/kowikitext",
+            "base": "20200920",
+            "ext": ["train", "dev", "test"]
+        },
     ])
-    version: str   = "20200302"    # 파일명 날짜
+    # version: str   = "20200302"    # 파일명 날짜
     index_dir: str = "rag_index"
-    chunk_size: int = 1024
-    chunk_overlap: int = 128
+    chunk_size: int = 258
+    chunk_overlap: int = 32
     model_name: str = "nlpai-lab/KURE-v1" # "dragonkue/bge-m3-ko" # "jhgan/ko-sroberta-multitask"
     batch_size: int = 256
     index_base: str = "rag_flat.index"
     meta_base: str = "rag_meta.jsonl"
-    top_k: int = 3
+    top_k: int = 5
 
 
 

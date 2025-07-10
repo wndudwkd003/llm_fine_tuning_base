@@ -5,11 +5,14 @@ target_files = ["dev.json", "test.json", "train.json"]
 target_dir = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
 
 quote_pat = re.compile(r'\\"(.*?)\\"')                      # \"텍스트\" 패턴
+option_pat = re.compile(r'(^|\s)(\d+)[ \t]+(?=\S)')
 
 def clean_text(text: str) -> str:
     text = text.replace('\\n', ' ').replace('\\t', ' ')
     text = quote_pat.sub(r"'\1'", text)
+    text = option_pat.sub(lambda m: f"{m.group(1)}{m.group(2)}. ", text)
     return ' '.join(text.split())
+
 
 def expand_answers(item: dict) -> list:
     """

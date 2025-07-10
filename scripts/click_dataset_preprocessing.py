@@ -18,7 +18,7 @@ def convert_to_dataset_format(item):
 
     add_question = []
     for index, choice in enumerate(choices):
-        add_question.append(f"{index+1} {choice}")
+        add_question.append(f"{index+1}. {choice}")
     add_question = " ".join(add_question)
 
     new_question = f"{new_question} 알맞은 것을 골라보세요? {add_question}".strip()
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     os.makedirs(target_data_dir, exist_ok=True)
 
     # 데이터를 9:1 비율로 분할 (train: 90%, validation: 10%)
-    train, val = train_test_split(train_data, test_size=0.0001, random_state=42)
+    train, val = train_test_split(train_data, test_size=0.1, random_state=42)
 
     # train, val 데이터를 새로운 포맷으로 변환
     converted_train = [convert_to_dataset_format(item) for item in train]
