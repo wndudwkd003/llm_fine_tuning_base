@@ -8,7 +8,7 @@ from peft import TaskType
 
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
-VERSION = 5
+VERSION = 1
 
 # tensorboard --log_dir ~ --port 6006
 class ModelId(Enum):
@@ -33,7 +33,7 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = f"merge_no_aug_datasets_{VERSION}_early_r_64_dosample_o_epoch_10_max_length_x_b_1"
+    additional_info: str = f"merge_no_aug_datasets_{VERSION}_early_r_128_dropout_0.1_dosample_x_epoch_10_max_length_x_b_1"
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
     backup_path: list[str] = field(default_factory=lambda: [
@@ -44,7 +44,7 @@ class SystemArgs:
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
     train: bool = True
-    test: bool = False
+    test: bool = False if train else True
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
     dpo_dataset_create_mode: bool = False
@@ -52,7 +52,7 @@ class SystemArgs:
 
 @dataclass
 class ModelArgs:
-    model_id: ModelId = ModelId.KANANA1_5_IT_8B
+    model_id: ModelId = ModelId.EXAONE3_5_IT_7_8B
     dtype: DType = DType.FP16
     use_flash_attn2: bool = True
     max_new_tokens: int = 2048
@@ -61,10 +61,9 @@ class ModelArgs:
     temperature: float = 0.7
     repetition_penalty: float = 1.05
     prompt_template: str = (
-        "You are a helpful AI assistant. Please answer the user's questions kindly. "#  Think about it step by step. "
-        "당신은 도움이 되는 어시스턴트입니다. "
-        "당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 대해 잘 알고 있는 유능한 AI 어시스턴트 입니다. "
-        "사용자의 질문에 대해 친절하게 답변해주세요. 단, 동일한 문장을 절대 반복하지 마시오."
+        "You are a helpful AI assistant. "#  Think about it step by step. "
+        "당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 논리적으로 해결할 수 있으며 잘 알고 있는 탁월한 전문가입니다. "
+        "사용자의 질문에 높임말로 답변해주세요. 또한, 질문의 요지를 정확하게 파악하고 올바른 답변을 해야합니다."
     )
     use_system_prompt: bool = True
     early_stopping: int | bool = 3 # 5
@@ -84,9 +83,9 @@ class DataArgs:
 @dataclass
 class LoraArgs:
     task_type: TaskType = TaskType.CAUSAL_LM
-    r: int = 64 # 128
-    lora_alpha: int = 64 # 128
-    lora_dropout: float = 0.0 # 0.05
+    r: int = 128 # 128
+    lora_alpha: int = 128 # 128
+    lora_dropout: float = 0.1 # 0.05
     # target_modules: list[str] | str = "all-linear"
     target_modules: list[str] | str = field(default_factory=lambda: [
         'q_proj','k_proj','v_proj','o_proj' # ,'gate_proj','down_proj','up_proj', 'lm_head'

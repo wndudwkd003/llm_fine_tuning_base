@@ -1,3 +1,38 @@
+1:
+"datasets/CLIcK_converted",
+69.6649218
+
+2:
+"datasets/KoAlpaca-v1.1a_converted",
+66.4396212
+
+3:
+"datasets/etri_qa_a_converted",
+"datasets/etri_qa_b_converted",
+"datasets/etri_qa_c_converted",
+69.1934658
+
+4:
+"datasets/etri_mrc_converted",
+67.6156722
+
+5:
+"datasets/KorWikiTQ_ko_converted",
+63.0197304
+
+6:
+"datasets/KMMLU_converted",
+
+
+7:
+"datasets/tydiqa-goldp_converted",
+
+
+8:
+"datasets/squad_kor_v1_converted",
+
+
+
 
 3-stage 점진적 고도화 학습
 

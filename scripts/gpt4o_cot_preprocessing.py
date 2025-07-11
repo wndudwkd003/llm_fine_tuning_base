@@ -33,7 +33,7 @@ def process_and_save(input_path, output_path):
 
 def main():
     base_path = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed_cot_refined"
-    output_path = base_path + "_converted"
+    output_path = base_path + "_converted_4.1_1"
     os.makedirs(output_path, exist_ok=True)
 
     # train.json, dev.json 변환
