@@ -107,6 +107,9 @@ def run_inference(
     printi(f"Inference finished. Predictions saved to: {save_path}")
 
 
+def change_target_dir(target_dir: str, current_stage: str):
+    return target_dir + f"_{current_stage}"
+
 def main(
     system_args: SystemArgs,
     model_args: ModelArgs,
@@ -122,7 +125,8 @@ def main(
         check_sft_type(system_args.use_lora, system_args.use_qlora, lora_args.use_dora),
         model_args.model_id.value,
         system_args.additional_info,
-        backup_path=system_args.backup_path
+        backup_path=system_args.backup_path,
+        current_stage=model_args.current_stage
     )
     sft_training_args.output_dir = output_dir
     sft_training_args.logging_dir = os.path.join(output_dir, "logs")
@@ -174,19 +178,23 @@ def main(
 
 
         # 4) Trainer 설정
+        printi(f"Changed output directory to: {sft_training_config.output_dir}")
+        printi(f"Current stage: {model_args.current_stage}")
+        model.print_trainable_parameters()
         trainer = SFTTrainer(
             model=model,
             args=sft_training_config,
             train_dataset=train_dataset_hf,
             eval_dataset=eval_dataset_hf,
-            peft_config=lora_config,
+            peft_config=lora_config if model_args.current_stage == "" else None,
             preprocess_logits_for_metrics=logits_to_cpu,
             data_collator=DataCollatorForSupervisedDataset(tokenizer),
             callbacks=early_stopping_callback
         )
 
-        # 5) 모델 학습
+        # 이제 실제 학습 시작
         trainer.train()
+
         save_training_curves(trainer, sft_training_config.output_dir)
 
         # 6) lora 모델 저장

@@ -6,11 +6,17 @@ def create_out_dir(
     train_type: str,
     model_id: str,
     additional_info: str = "",
-    backup_path: list[str] = None
+    backup_path: list[str] = None,
+    current_stage: str = ""
 ):
 
     model_id = slash_remove(model_id)
-    target_name = f"{model_id}_{train_type}{f'_{additional_info}' if additional_info else ''}"
+
+
+    current_stage = f"_{current_stage}" if current_stage != "" else ""
+
+    target_name = f"{model_id}_{train_type}{f'_{additional_info}{current_stage}' if additional_info else ''}"
+    print(f"{target_name}")
 
     target_dir = os.path.join(
         output_dir,

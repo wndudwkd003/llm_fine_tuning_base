@@ -3,7 +3,7 @@ import torch
 import re
 from dataclasses import asdict
 from transformers import BitsAndBytesConfig
-from peft import LoraConfig
+from peft import LoraConfig, PeftModel
 from trl import SFTConfig
 from datasets import load_dataset
 from transformers import (
@@ -19,6 +19,7 @@ from src.configs.config import (
     ModelArgs,
     # FSDPArgs
 )
+from src.utils.print_utils import printi
 from src.utils.qa_dataset import CustomDataset
 
 def initialize_config(
@@ -188,7 +189,13 @@ def generate_answer(
 
     return text, reasoning
 
-
+def count_trainable_params(model):
+    total = 0
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            # print(f"Trainable: {name}, shape={param.shape}")
+            total += param.numel()
+    print(f"Total trainable params: {total}")
 
 def prepare_model_tokenmizer(
     model_args: ModelArgs,
@@ -207,6 +214,19 @@ def prepare_model_tokenmizer(
         trust_remote_code=True,
     )
 
+    # 2-stage 이상일 때 PEFT 모델 불러오기
+    if model_args.current_stage != "":
+        adapter_dir = os.path.join(model_args.prev_stage_model_dir, model_args.load_model)
+        model = PeftModel.from_pretrained(
+            model,
+            adapter_dir,
+        )
+        for name, param in model.named_parameters():
+            if "lora_" in name or "lora" in name:  # 일부 모델에서는 접두어 다름
+                param.requires_grad = True
+        printi(f"Loaded PEFT model from {adapter_dir}")
+        model.print_trainable_parameters()
+
     if is_train:
         # gradient checkpointing 사용시 use_cache 사용 불가능
         if gradient_checkpointing:
@@ -214,13 +234,13 @@ def prepare_model_tokenmizer(
         else:
             model.config.use_cache = True
         model.train()
+        printi("Model is set to training mode.")
     else:
         model.config.use_cache = True
         model.eval()
-
+        printi("Model is set to evaluation mode.")
 
     # model.config.torch_dtype = model_args.dtype.value
-
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_id.value,
@@ -230,5 +250,9 @@ def prepare_model_tokenmizer(
 
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+
+    count_trainable_params(model)
+    print("Model and tokenizer prepared successfully.")
 
     return model, tokenizer

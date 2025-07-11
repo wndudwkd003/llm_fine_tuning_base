@@ -32,8 +32,8 @@ def process_and_save(input_path, output_path):
     print(f"{os.path.basename(output_path)} 저장 완료 ({len(new_data)}개 항목)")
 
 def main():
-    base_path = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed_cot_refined"
-    output_path = base_path + "_converted_4.1_1"
+    base_path = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed_cot_refined_4.1"
+    output_path = base_path + "_converted"
     os.makedirs(output_path, exist_ok=True)
 
     # train.json, dev.json 변환

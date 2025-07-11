@@ -1,7 +1,7 @@
 import os, json, shutil, yaml, time
 from openai import OpenAI, RateLimitError
 
-DATA_PATH = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
+DATA_PATH = "datasets/CLIcK_converted"
 TARGET_PATH = DATA_PATH + "_cot_refined_4.1"
 TARGET_FILE = {"train.json": True, "dev.json": True, "test.json": False}
 YAML_PATH = "src/configs/token.yaml"
