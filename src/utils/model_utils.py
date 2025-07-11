@@ -1,5 +1,6 @@
 import os
 import torch
+import re
 from dataclasses import asdict
 from transformers import BitsAndBytesConfig
 from peft import LoraConfig
@@ -97,15 +98,54 @@ def data_prepare(
     return data_dict
 
 
+# @torch.inference_mode()
+# def generate_answer(
+#     model,
+#     tokenizer,
+#     input_ids,
+#     terminators,
+#     model_args: ModelArgs,
+# ):
+
+#     device = next(model.parameters()).device
+#     input_ids = input_ids.to(device)
+
+#     outputs = model.generate(
+#         input_ids.unsqueeze(0),
+#         max_new_tokens=model_args.max_new_tokens,
+#         eos_token_id=terminators,
+#         pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id,
+#         repetition_penalty=model_args.repetition_penalty,
+#         # temperature=model_args.temperature,
+#         # top_p=model_args.top_p,
+#         # top_k=model_args.top_k,
+#         do_sample=model_args.do_sample,
+#     )
+
+#     gen_tokens = outputs[0][input_ids.size(0):]
+#     text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
+
+#     if text.startswith("[|assistant|]"):
+#         text = text[len("[|assistant|]"):].lstrip()
+#     if text.startswith("assistant\n\n"):
+#         text = text[len("assistant\n\n"):]
+#     if text.startswith("답변: "):
+#         text = text[4:]
+#     elif text.startswith("답변:"):
+#         text = text[3:]
+#     if "#" in text:
+#         text = text.split("#", 1)[0].strip()
+#     return text
+
+
 @torch.inference_mode()
 def generate_answer(
     model,
     tokenizer,
     input_ids,
     terminators,
-    model_args: ModelArgs,
+    model_args,
 ):
-
     device = next(model.parameters()).device
     input_ids = input_ids.to(device)
 
@@ -115,27 +155,30 @@ def generate_answer(
         eos_token_id=terminators,
         pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id,
         repetition_penalty=model_args.repetition_penalty,
+        do_sample=model_args.do_sample,
         # temperature=model_args.temperature,
         # top_p=model_args.top_p,
         # top_k=model_args.top_k,
-        do_sample=model_args.do_sample,
     )
 
     gen_tokens = outputs[0][input_ids.size(0):]
     text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
 
-    if text.startswith("[|assistant|]"):
-        text = text[len("[|assistant|]"):].lstrip()
-    if text.startswith("assistant\n\n"):
-        text = text[len("assistant\n\n"):]
-    if text.startswith("답변: "):
-        text = text[4:]
-    elif text.startswith("답변:"):
-        text = text[3:]
+    # 전처리: 프리픽스 제거
+    for prefix in ["[|assistant|]", "assistant\n\n", "답변:", "답변: "]:
+        if text.startswith(prefix):
+            text = text[len(prefix):].lstrip()
+
     if "#" in text:
         text = text.split("#", 1)[0].strip()
-    return text
 
+    # ➤ CoT인 경우: <답변>...</답변> 안의 텍스트만 추출
+    if model_args.is_cot:
+        match = re.search(r"<답변>(.*?)</답변>", text, re.DOTALL)
+        if match:
+            text = match.group(1).strip()
+
+    return text
 
 
 def prepare_model_tokenmizer(

@@ -8,7 +8,7 @@ from peft import TaskType
 
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
-VERSION = 1
+VERSION = 3
 
 # tensorboard --log_dir ~ --port 6006
 class ModelId(Enum):
@@ -33,7 +33,7 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = f"merge_no_aug_datasets_{VERSION}_early_r_64_dosample_o_epoch_10_max_length_x_b_2"
+    additional_info: str = f"merge_no_aug_datasets_{VERSION}_early_r_64_dosample_o_epoch_10_max_length_x_b_1"
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
     backup_path: list[str] = field(default_factory=lambda: [
@@ -43,8 +43,8 @@ class SystemArgs:
     use_qlora: bool = False
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
-    train: bool = False
-    test: bool = True
+    train: bool = True
+    test: bool = False
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
     dpo_dataset_create_mode: bool = False
@@ -70,6 +70,7 @@ class ModelArgs:
     early_stopping: int | bool = 3 # 5
     use_accelerate: bool = False
     load_model: str = "lora_adapter" # "lora_adapter"
+    is_cot: bool = False
 
 
 @dataclass
