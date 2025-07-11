@@ -46,19 +46,19 @@ SHUFFLE = True  # True면 other 데이터들끼리만 랜덤 셔플
 
 
 if __name__ == "__main__":
-    data_number = 8
+    data_number = "1-3"
     original_dataset = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
     other_datasets = [
-        #"datasets/CLIcK_converted",
+        "datasets/CLIcK_converted",
         # "datasets/KoAlpaca-v1.1a_converted",
-        # "datasets/etri_qa_a_converted",
-        # "datasets/etri_qa_b_converted",
-        # "datasets/etri_qa_c_converted",
+        "datasets/etri_qa_a_converted",
+        "datasets/etri_qa_b_converted",
+        "datasets/etri_qa_c_converted",
         # "datasets/etri_mrc_converted",
         # "datasets/KorWikiTQ_ko_converted",
         # "datasets/KMMLU_converted",
         # "datasets/tydiqa-goldp_converted",
-        "datasets/squad_kor_v1_converted",
+        # "datasets/squad_kor_v1_converted",
 
     ]
 

@@ -119,7 +119,7 @@ def main(
     # 0) 저장 경로 및 백업 설정
     output_dir, target_name = create_out_dir(
         sft_training_args.output_dir,
-        check_sft_type(system_args.use_lora, system_args.use_qlora),
+        check_sft_type(system_args.use_lora, system_args.use_qlora, lora_args.use_dora),
         model_args.model_id.value,
         system_args.additional_info,
         backup_path=system_args.backup_path
@@ -205,7 +205,7 @@ def main(
             sft_training_args=sft_training_args,
 
         )
-        printi(f"Inference completed. Results saved in {sft_training_config.output_dir}/pred_result/{target_name}.json")
+        printi(f"Inference completed. Results saved in {sft_training_config.output_dir}/pred_result")
 
     print()
     printi("Finished all processes.")
