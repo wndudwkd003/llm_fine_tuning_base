@@ -1,19 +1,5 @@
-sub_3_data_korean_culture_qa_V1.0_preprocessed
-CLIcK_converted
-KoAlpaca-v1.1a_converted
-squad_kor_v1_converted
-tydiqa-goldp_converted
-KorWikiTQ_ko_converted
-KMMLU_converted
-etri_mrc_converted
-etri_qa_a_converted
-etri_qa_b_converted
-etri_qa_c_converted
-
-
 
 3-stage 점진적 고도화 학습
-
 
 1-stage: -> 데이터 세트 선별 + SFT
 기존 데이터 세트와 더해서 학습 했을 때 성능이 개선되는 데이터 세트를 선별
@@ -22,8 +8,20 @@ etri_qa_c_converted
 * 브루투포스 ablation으로 데이터 세트를 선택
 * SFT Trainer로 학습
 
-2-stage: -> 
+2-stage: -> 데이터 세트에 추론과정을 더하여 증강 + SFT
+선택된 데이터 세트에 GPT4 API를 이용하여 중간 추론 과정을 더하고 데이터 세트를 늘림
+이 데이터 세트로 SFT 수행
 
+* GPT4 API로 추론과정을 더하여 데이터 세트를 생성
+* SFT Trainer로 학습
+
+3-stage:
+먼저 GPT4 API로 2-stage 데이터 세트에 미묘하지만 답이 틀린 Hard-negative 데이터 세트를 생성
+2-stage에서 생성한 데이터 세트를 선택 데이터로, 1-stage 학습 전 pure pre-trained 모델의 답변, 1-stage 답변, hard-negative 데이터 답변 총 3가지 답변을 거절 데이터로
+질문-선택-거절 쌍을 만들어 데이터 세트를 구성 후 DPO 학습 수행
+
+* pure pre-trained 답변, 1-stage 답변, hard-negative 답변을 거절 데이터로 구성하여 DPO 데이터 세트 구성
+* DPO Trainer로 학습
 
 
 

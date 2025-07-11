@@ -115,9 +115,9 @@ def generate_answer(
         eos_token_id=terminators,
         pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id,
         repetition_penalty=model_args.repetition_penalty,
-        temperature=model_args.temperature,
-        top_p=model_args.top_p,
-        top_k=model_args.top_k,
+        # temperature=model_args.temperature,
+        # top_p=model_args.top_p,
+        # top_k=model_args.top_k,
         do_sample=model_args.do_sample,
     )
 

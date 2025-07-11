@@ -8,7 +8,7 @@ from peft import TaskType
 
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
-VERSION = 2
+VERSION = 1
 
 # tensorboard --log_dir ~ --port 6006
 class ModelId(Enum):
@@ -43,8 +43,8 @@ class SystemArgs:
     use_qlora: bool = False
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
-    train: bool = True
-    test: bool = False
+    train: bool = False
+    test: bool = True
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
     dpo_dataset_create_mode: bool = False
@@ -58,7 +58,6 @@ class ModelArgs:
     max_new_tokens: int = 2048
     do_sample: bool = False
     top_p: float = 0.8
-    top_k: int = 50
     temperature: float = 0.7
     repetition_penalty: float = 1.05
     prompt_template: str = (
