@@ -8,7 +8,7 @@ from peft import TaskType
 
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
-VERSION = 1
+VERSION = "base"
 
 # tensorboard --log_dir ~ --port 6006
 class ModelId(Enum):
@@ -33,7 +33,7 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = f"merge_no_aug_datasets_{VERSION}_early_r_64_dropout_0.1_dosample_x_epoch_10_max_length_x_b_1"
+    additional_info: str = f"merge_no_aug_datasets_{VERSION}_early_r_64_dosample_o_epoch_10_max_length_x_b_1"
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
     backup_path: list[str] = field(default_factory=lambda: [
@@ -43,7 +43,7 @@ class SystemArgs:
     use_qlora: bool = False
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
-    train: bool = True
+    train: bool = False
     test: bool = False if train else True
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
@@ -55,7 +55,7 @@ class ModelArgs:
     model_id: ModelId = ModelId.KANANA1_5_IT_8B
     dtype: DType = DType.FP16
     use_flash_attn2: bool = True
-    max_new_tokens: int = 4096
+    max_new_tokens: int = 2048
     do_sample: bool = False
     top_p: float = 0.8
     temperature: float = 0.7
@@ -68,9 +68,9 @@ class ModelArgs:
     early_stopping: int | bool = 3 # 5
     use_accelerate: bool = False
     load_model: str = "lora_adapter" # "lora_adapter"
-    is_cot: bool = True
-    current_stage: str = "2-stage"
-    prev_stage_model_dir: str = "output/kakaocorp_kanana-1.5-8b-instruct-2505_sft_lora_merge_no_aug_datasets_1_early_r_64_dosample_o_epoch_10_max_length_x_b_1"
+    is_cot: bool = False
+    current_stage: str = ""# "2-stage"
+    prev_stage_model_dir: str = ""# "output/kakaocorp_kanana-1.5-8b-instruct-2505_sft_lora_merge_no_aug_datasets_1_early_r_64_dosample_o_epoch_10_max_length_x_b_1"
 
 
 @dataclass
@@ -78,10 +78,10 @@ class DataArgs:
     pad_to_multiple_of: int | None = None
     label_pad_token_id: int = -100
 
-    # data_dir: str =  f"datasets/merged_dataset_no_aug_v{VERSION}" \
-    #     if VERSION != "base" else "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
+    data_dir: str =  f"datasets/merged_dataset_no_aug_v{VERSION}" \
+        if VERSION != "base" else "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
 
-    data_dir: str = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed_cot_refined_4.1_converted"
+    # data_dir: str = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed_cot_refined_4.1_converted"
 
 
 @dataclass
@@ -89,7 +89,7 @@ class LoraArgs:
     task_type: TaskType = TaskType.CAUSAL_LM
     r: int = 64 # 128
     lora_alpha: int = 64 # 128
-    lora_dropout: float = 0.1 # 0.1 # 0.05
+    lora_dropout: float = 0.0 # 0.1 # 0.05
     # target_modules: list[str] | str = "all-linear"
     target_modules: list[str] | str = field(default_factory=lambda: [
         'q_proj','k_proj','v_proj','o_proj' # ,'gate_proj','down_proj','up_proj', 'lm_head'
@@ -118,10 +118,10 @@ class SFTTrainingArgs:
     gradient_accumulation_steps: int = GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
     eval_strategy: str = "steps" # "no", "epoch", "steps"
     save_strategy: str = "steps" # "no", "epoch", "steps"
-    eval_steps: int | None = 2452 # 613 # 2452
-    save_steps: int | None = 2452 # 100
+    eval_steps: int | None = 613 # 2452 # 613 # 2452
+    save_steps: int | None = 613 # 2452 # 100
     logging_steps: int = 50
-    learning_rate: float = 1e-5
+    learning_rate: float = 2e-5
     weight_decay: float = 0.1
     warmup_ratio: float = 0.03
     lr_scheduler_type: str = "cosine"
@@ -132,7 +132,7 @@ class SFTTrainingArgs:
     bf16: bool = False
     packing: bool = False
     # max_length: int = 4096
-    gradient_checkpointing: bool = False
+    gradient_checkpointing: bool = True
     activation_offloading: bool = False
     label_names: list[str] = field(default_factory=lambda: ["labels"])
     load_best_model_at_end: bool = True

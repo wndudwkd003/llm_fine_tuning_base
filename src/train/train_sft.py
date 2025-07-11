@@ -180,7 +180,7 @@ def main(
         # 4) Trainer 설정
         printi(f"Changed output directory to: {sft_training_config.output_dir}")
         printi(f"Current stage: {model_args.current_stage}")
-        model.print_trainable_parameters()
+        # model.print_trainable_parameters()
         trainer = SFTTrainer(
             model=model,
             args=sft_training_config,
