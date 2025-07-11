@@ -22,8 +22,13 @@ def save_training_curves(trainer, output_dir: str,
 
         # 평가 손실·정확도
         if "eval_loss" in entry:
-            eval_steps.append(step)
-            eval_losses.append(entry["eval_loss"])
+            eval_loss = entry["eval_loss"]
+            # NaN 값 필터링
+            if not (eval_loss != eval_loss):  # NaN 체크 (NaN != NaN은 True)
+                eval_steps.append(step)
+                eval_losses.append(eval_loss)
+
+            # accuracy는 별도로 처리
             for k in ACC_KEYS:
                 if k in entry:
                     eval_accs.append(entry[k])
@@ -34,7 +39,7 @@ def save_training_curves(trainer, output_dir: str,
     # ── Loss 곡선 ──
     plt.figure()
     plt.plot(train_steps, train_losses, label="train_loss")
-    if eval_losses:
+    if eval_losses:  # NaN이 필터링된 후 데이터가 있다면
         plt.plot(eval_steps, eval_losses, label="eval_loss")
     plt.xlabel("step"); plt.ylabel("loss"); plt.legend(); plt.tight_layout()
     plt.savefig(os.path.join(output_dir, loss_fname), dpi=300)
@@ -43,7 +48,9 @@ def save_training_curves(trainer, output_dir: str,
     # ── Accuracy 곡선 ──
     if eval_accs:
         plt.figure()
-        plt.plot(eval_steps, eval_accs, label="eval_accuracy")
+        # accuracy용 step은 모든 eval step 사용
+        eval_acc_steps = [entry.get("step") for entry in log_history if any(k in entry for k in ACC_KEYS)]
+        plt.plot(eval_acc_steps, eval_accs, label="eval_accuracy")
         plt.xlabel("step"); plt.ylabel("accuracy"); plt.legend(); plt.tight_layout()
         plt.savefig(os.path.join(output_dir, acc_fname), dpi=300)
         plt.close()

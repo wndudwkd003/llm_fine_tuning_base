@@ -9,3 +9,25 @@ etri_mrc_converted
 etri_qa_a_converted
 etri_qa_b_converted
 etri_qa_c_converted
+
+
+
+3-stage 점진적 고도화 학습
+
+
+1-stage: -> 데이터 세트 선별 + SFT
+기존 데이터 세트와 더해서 학습 했을 때 성능이 개선되는 데이터 세트를 선별
+그리고 해당 데이터 세트로 Supervised Fine Tuning
+
+* 브루투포스 ablation으로 데이터 세트를 선택
+* SFT Trainer로 학습
+
+2-stage: -> 
+
+
+
+
+
+
+
+

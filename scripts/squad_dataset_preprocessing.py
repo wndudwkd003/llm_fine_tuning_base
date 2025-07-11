@@ -34,18 +34,15 @@ if __name__ == "__main__":
             data = json.load(f)
             merged_data.extend(data)
 
-    # 9:1 비율로 분할
-    train_data, dev_data = train_test_split(merged_data, test_size=0.1, random_state=42)
-
-    # 변환
-    converted_train = [convert_to_dataset_format(item) for item in train_data]
-    converted_dev = [convert_to_dataset_format(item) for item in dev_data]
+    # 전체 데이터를 변환 (분할하지 않음)
+    converted_train = [convert_to_dataset_format(item) for item in merged_data]
 
     # 저장
     with open(os.path.join(target_dir, "train.json"), "w", encoding="utf-8") as f:
         json.dump(converted_train, f, ensure_ascii=False, indent=4)
         print(f"Saved train.json to {target_dir} ({len(converted_train)}개)")
 
+    # 빈 dev.json 파일 생성
     with open(os.path.join(target_dir, "dev.json"), "w", encoding="utf-8") as f:
-        json.dump(converted_dev, f, ensure_ascii=False, indent=4)
-        print(f"Saved dev.json to {target_dir} ({len(converted_dev)}개)")
+        json.dump([], f, ensure_ascii=False, indent=4)
+        print(f"Saved dev.json to {target_dir} (0개)")

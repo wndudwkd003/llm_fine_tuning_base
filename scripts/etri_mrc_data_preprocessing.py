@@ -40,14 +40,12 @@ if __name__ == "__main__":
             qas = paragraph["qas"]
             merged_data.extend(convert_to_dataset_format(context, title, qas))
 
-    # train/dev 분할
-    train_data, dev_data = train_test_split(merged_data, test_size=0.1, random_state=42)
-
-    # 저장
+    # 전체 데이터를 변환 (분할하지 않음)
     with open(os.path.join(target_dir, "train.json"), "w", encoding="utf-8") as f:
-        json.dump(train_data, f, ensure_ascii=False, indent=2)
-        print(f"train.json 저장 완료 ({len(train_data)}개)")
+        json.dump(merged_data, f, ensure_ascii=False, indent=2)
+        print(f"train.json 저장 완료 ({len(merged_data)}개)")
 
+    # 빈 dev.json 파일 생성
     with open(os.path.join(target_dir, "dev.json"), "w", encoding="utf-8") as f:
-        json.dump(dev_data, f, ensure_ascii=False, indent=2)
-        print(f"dev.json 저장 완료 ({len(dev_data)}개)")
+        json.dump([], f, ensure_ascii=False, indent=2)
+        print(f"dev.json 저장 완료 (0개)")

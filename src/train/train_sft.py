@@ -210,10 +210,12 @@ def main(
     printi("Finished all processes.")
 
 
-def logits_to_cpu(logits, labels):
-    preds = torch.argmax(logits, dim=-1).cpu().to(torch.int32)
-    return preds, labels.cpu()
+# def logits_to_cpu(logits, labels):
+#     preds = torch.argmax(logits, dim=-1).cpu().to(torch.int32)
+#     return preds, labels.cpu()
 
+def logits_to_cpu(logits, labels):
+    return logits.cpu(), labels.cpu()
 
 
 

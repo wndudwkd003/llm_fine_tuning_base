@@ -52,28 +52,23 @@ from sklearn.model_selection import train_test_split
 # }
 
 
-category_translations = {
-    "Korean History": "한국사",
-    "Law": "법학",
-    "Political Science and Sociology": "정치학 및 사회학",
-    "Social Welfare": "사회복지학",
-    "Education": "교육학",
-    "Psychology": "심리학",
-    "Economics": "경제학",
-    "Electrical Engineering": "전기공학",
-    "Mechanical Engineering": "기계공학",
-    "Materials Engineering": "재료공학",
-    "Chemical Engineering": "화학공학",
-    "Environmental Science": "환경과학",
-    "Information Technology": "정보기술",
-    "Computer Science": "컴퓨터과학",
-    "Telecommunications and Wireless Technology": "통신 및 무선기술",
-    "Math": "수학",
-    "Patent": "특허학",
-    "Taxation": "조세학",
-    "Real Estate": "부동산학"
-}
 
+category_translations = {
+    "Korean History": "한국사",  # 한국 역사 - 직접 관련
+    "Political Science and Sociology": "정치학 및 사회학",  # 사회 분야 - 직접 관련
+    "Social Welfare": "사회복지학",  # 사회 분야 - 직접 관련
+    "Psychology": "심리학",  # 사회과학 분야 - 관련
+    "Economics": "경제학",  # 사회과학 분야 - 관련
+    "Electrical Engineering": "전기공학",  # 과학기술 분야 - 직접 관련
+    "Mechanical Engineering": "기계공학",  # 과학기술 분야 - 직접 관련
+    "Materials Engineering": "재료공학",  # 과학기술 분야 - 직접 관련
+    "Chemical Engineering": "화학공학",  # 과학기술 분야 - 직접 관련
+    "Environmental Science": "환경과학",  # 과학기술 분야 - 직접 관련
+    "Information Technology": "정보기술",  # 과학기술 분야 - 직접 관련
+    "Computer Science": "컴퓨터과학",  # 과학기술 분야 - 직접 관련
+    "Telecommunications and Wireless Technology": "통신 및 무선기술",  # 과학기술 분야 - 직접 관련
+    "Math": "수학"  # 과학기술의 기초 분야 - 직접 관련
+}
 
 
 def convert_to_dataset_format(item, category, idx):
@@ -136,22 +131,20 @@ if __name__ == "__main__":
                     convert_to_dataset_format(item, category_en, idx)
                 )
 
-
     # 중복 제거된 카테고리 출력
     print("\n[사용된 Category 목록]")
     for cat in sorted(category_set):
         print(cat)
 
-    # train:dev = 9:1 분할
-    train_data, dev_data = train_test_split(merged_data, test_size=0.1, random_state=42)
-
+    # 전체 데이터를 변환 (분할하지 않음)
     with open(os.path.join(target_dir, "train.json"), "w", encoding="utf-8") as f:
-        json.dump(train_data, f, ensure_ascii=False, indent=2)
-        print(f"train.json 저장 완료 ({len(train_data)}개)")
+        json.dump(merged_data, f, ensure_ascii=False, indent=2)
+        print(f"train.json 저장 완료 ({len(merged_data)}개)")
 
+    # 빈 dev.json 파일 생성
     with open(os.path.join(target_dir, "dev.json"), "w", encoding="utf-8") as f:
-        json.dump(dev_data, f, ensure_ascii=False, indent=2)
-        print(f"dev.json 저장 완료 ({len(dev_data)}개)")
+        json.dump([], f, ensure_ascii=False, indent=2)
+        print(f"dev.json 저장 완료 (0개)")
 
     # 마지막에 출력
     if untranslated_categories:

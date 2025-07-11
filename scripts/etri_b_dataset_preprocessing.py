@@ -29,13 +29,12 @@ for idx, row in df.iterrows():
         }
     })
 
-# 분할 저장 (9:1 비율)
-train_data, dev_data = train_test_split(converted, test_size=0.1, random_state=42)
-
+# 전체 데이터를 train으로 저장 (분할하지 않음)
 with open(os.path.join(save_dir, "train.json"), "w", encoding="utf-8") as f:
-    json.dump(train_data, f, ensure_ascii=False, indent=2)
+    json.dump(converted, f, ensure_ascii=False, indent=2)
 
+# 빈 dev.json 파일 생성
 with open(os.path.join(save_dir, "dev.json"), "w", encoding="utf-8") as f:
-    json.dump(dev_data, f, ensure_ascii=False, indent=2)
+    json.dump([], f, ensure_ascii=False, indent=2)
 
-print(f"train.json: {len(train_data)}개, dev.json: {len(dev_data)}개 저장 완료.")
+print(f"train.json: {len(converted)}개, dev.json: 0개 저장 완료.")
