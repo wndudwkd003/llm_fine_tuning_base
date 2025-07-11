@@ -137,6 +137,8 @@ def data_prepare(
 #         text = text.split("#", 1)[0].strip()
 #     return text
 
+import re
+import torch
 
 @torch.inference_mode()
 def generate_answer(
@@ -172,13 +174,20 @@ def generate_answer(
     if "#" in text:
         text = text.split("#", 1)[0].strip()
 
+    # 추론 부분 추출
+    reasoning = None
+    match_reasoning = re.search(r"<추론>(.*?)</추론>", text, re.DOTALL)
+    if match_reasoning:
+        reasoning = match_reasoning.group(1).strip()
+
     # ➤ CoT인 경우: <답변>...</답변> 안의 텍스트만 추출
     if model_args.is_cot:
-        match = re.search(r"<답변>(.*?)</답변>", text, re.DOTALL)
-        if match:
-            text = match.group(1).strip()
+        match_answer = re.search(r"<답변>(.*?)</답변>", text, re.DOTALL)
+        if match_answer:
+            text = match_answer.group(1).strip()
 
-    return text
+    return text, reasoning
+
 
 
 def prepare_model_tokenmizer(

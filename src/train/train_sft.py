@@ -77,7 +77,7 @@ def run_inference(
         sample_id = sample["id"]
         input_ids = sample["input_ids"]
 
-        answer_text = generate_answer(
+        answer_text, reasoning_text = generate_answer(
             model,
             tokenizer,
             input_ids,
@@ -89,7 +89,8 @@ def run_inference(
             "id": sample_id,
             "output": {
                 "answer": answer_text
-            }
+            },
+            "reasoning": reasoning_text if reasoning_text is not None else "",
         }
 
         results.append(result)
