@@ -8,7 +8,7 @@ from peft import TaskType
 
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
-VERSION = 6
+VERSION = 5
 
 # tensorboard --log_dir ~ --port 6006
 class ModelId(Enum):
