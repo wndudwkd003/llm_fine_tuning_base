@@ -2,6 +2,7 @@ datasets/
 output/
 rag_index/
 src/configs/token.yaml
+encoded_output/
 
 __pycache__/
 *.pyc

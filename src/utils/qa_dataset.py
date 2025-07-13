@@ -63,7 +63,7 @@ class CustomDataset(Dataset):
 
         self.inp = []
         self.label = []
-        self.ids = []
+        self.original_data = []
 
         with open(fname, "r") as f:
             data = json.load(f)
@@ -92,7 +92,7 @@ class CustomDataset(Dataset):
             return chat
 
         for example in tqdm(data, desc="Loading dataset", unit="example"):
-            self.ids.append(example.get("id", ""))
+            self.original_data.append(example)
 
             user_prompt = make_chat(example["input"])
 
@@ -148,9 +148,10 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, idx):
         return {
-            "id":       self.ids[idx],
+            "id":       self.original_data[idx]["id"],
             "input_ids": self.inp[idx],
-            "labels":   self.label[idx]
+            "labels":   self.label[idx],
+            "original_data": self.original_data[idx]
         }
 
 class DataCollatorForSupervisedDataset(object):

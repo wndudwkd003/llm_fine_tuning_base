@@ -164,14 +164,21 @@ def generate_answer(
         # top_k=model_args.top_k,
     )
 
-    gen_tokens = outputs[0][input_ids.size(0):]
-    text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
+    # 전체 출력에서 assistant 이후 부분 추출
+    full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-    # 전처리: 프리픽스 제거
-    for prefix in ["[|assistant|]", "assistant\n\n", "답변:", "답변: "]:
-        if text.startswith(prefix):
-            text = text[len(prefix):].lstrip()
+    # assistant 이후의 텍스트 찾기
+    if "assistant\n" in full_output:
+        text = full_output.split("assistant\n", 1)[1].strip()
+    elif "assistant" in full_output:
+        text = full_output.split("assistant", 1)[1].strip()
+    else:
+        # gen_tokens 방식으로 fallback
+        gen_tokens = outputs[0][input_ids.size(0):]
+        text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
 
+
+    # 나머지 처리 로직...
     if "#" in text:
         text = text.split("#", 1)[0].strip()
 

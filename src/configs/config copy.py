@@ -8,7 +8,7 @@ from peft import TaskType
 
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
-VERSION = 3
+VERSION = 1
 
 # tensorboard --log_dir ~ --port 6006
 class ModelId(Enum):
@@ -43,8 +43,8 @@ class SystemArgs:
     use_qlora: bool = False
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
-    train: bool = True
-    test: bool = False
+    train: bool = False
+    test: bool = True
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
     dpo_dataset_create_mode: bool = False
@@ -70,7 +70,8 @@ class ModelArgs:
     early_stopping: int | bool = 3 # 5
     use_accelerate: bool = False
     load_model: str = "lora_adapter" # "lora_adapter"
-    is_cot: bool = False
+    current_stage: str = ""
+    is_cot: bool = False  # True or False, CoT 사용 여부
 
 
 @dataclass
@@ -94,6 +95,7 @@ class LoraArgs:
 
     #  "all-linear"
     bias: str = "none"  # or "all", "lora_only"
+    use_dora: bool = False  # True or False, DORA 사용 여부
 
 @dataclass
 class BitsAndBytesArgs:
