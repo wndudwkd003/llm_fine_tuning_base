@@ -9,6 +9,7 @@ from peft import TaskType
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
 VERSION = "1-3"
+FIT = "V1_T"
 
 # tensorboard --log_dir ~ --port 6006
 class ModelId(Enum):
@@ -33,7 +34,7 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = f"merge_no_aug_datasets_{VERSION}_early_r_128_dropout_0.1_dosample_x_epoch_10_max_length_x_b_1"
+    additional_info: str = f"merge_no_aug_datasets_{VERSION}_early_r_128_dropout_0.1_dosample_x_epoch_10_max_length_x_b_1_{FIT}"
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
     backup_path: list[str] = field(default_factory=lambda: [
@@ -43,11 +44,12 @@ class SystemArgs:
     use_qlora: bool = False
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
-    train: bool = False
+    train: bool = True
     test: bool = False if train else True
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
     dpo_dataset_create_mode: bool = False
+    use_rag: bool = True  # RAG 사용 여부
 
 
 @dataclass
@@ -55,15 +57,16 @@ class ModelArgs:
     model_id: ModelId = ModelId.KANANA1_5_IT_8B
     dtype: DType = DType.FP16
     use_flash_attn2: bool = True
-    max_new_tokens: int = 2048
+    max_new_tokens: int = 8096
     do_sample: bool = False
     top_p: float = 0.8
     temperature: float = 0.7
     repetition_penalty: float = 1.05
     prompt_template: str = (
-        "You are a helpful AI assistant. "#  Think about it step by step. "
-        "당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 논리적으로 해결할 수 있으며 잘 알고 있는 탁월한 전문가입니다. "
-        "사용자의 질문에 높임말로 답변해주세요. 또한, 질문의 요지를 정확하게 파악하고 올바른 답변을 해야합니다."
+        "You are a helpful AI assistant. 당신은 도움이 되는 어시스턴트 AI입니다. "#  Think about it step by step. "
+        "당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 논리적으로 해결할 수 있으며 정확하게 알고 있는 탁월한 전문가입니다. "
+        "애매모호한 답변은 피하고, 질문에 대한 답변은 명확하고 구체적으로 작성해야 합니다. "
+        "사용자의 질문에 대한 답변은 높임말로 대답하면 안됩니다. ~한다. ~이 있다. 등으로 작성하세요. 단, 질문의 요지를 정확하게 파악하고, 최대한 자세하고 정확한 답변을 해야합니다."
     )
     use_system_prompt: bool = True
     early_stopping: int | bool = 3 # 5
@@ -77,8 +80,20 @@ class ModelArgs:
 class DataArgs:
     pad_to_multiple_of: int | None = None
     label_pad_token_id: int = -100
-    # data_dir: str = "datasets/refine_sub_3_data_korean_culture_qa_V1.0"
-    data_dir: str = f"datasets/merged_dataset_no_aug_v{VERSION}"
+    base_data_dir: str = f"datasets/merged_dataset_no_aug_v{VERSION}"
+
+    @property
+    def data_dir(self):
+        """SystemArgs의 use_rag 설정에 따라 적절한 데이터 경로 반환"""
+        # SystemArgs 인스턴스 가져오기 (main 함수에서 설정됨)
+        if hasattr(self, '_use_rag') and self._use_rag:
+            return f"{self.base_data_dir}_for_rag"
+        return self.base_data_dir
+
+    def set_use_rag(self, use_rag: bool):
+        """use_rag 설정을 저장"""
+        self._use_rag = use_rag
+
 
 
 @dataclass
@@ -88,13 +103,13 @@ class LoraArgs:
     lora_alpha: int = 128 # 128
     lora_dropout: float = 0.1 # 0.05
     # target_modules: list[str] | str = "all-linear"
-    # target_modules: list[str] | str = field(default_factory=lambda: [
-    #     'q_proj','k_proj','v_proj','o_proj' # ,'gate_proj','down_proj','up_proj', 'lm_head'
-    # ])
+    target_modules: list[str] | str = field(default_factory=lambda: [
+        'q_proj','k_proj','v_proj','o_proj' # ,'gate_proj','down_proj','up_proj', 'lm_head'
+    ])
 
-    target_modules: str = "all-linear"
+    #  "all-linear"
     bias: str = "none"  # or "all", "lora_only"
-    use_dora: bool = True
+    use_dora: bool = False
 
 @dataclass
 class BitsAndBytesArgs:

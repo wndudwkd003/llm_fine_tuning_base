@@ -79,23 +79,75 @@ def add_system_prompt(example, system_prompt: str, use_system_prompt: bool = Tru
 #     return data_dict
 
 
+# def data_prepare(
+#     data_splits,
+#     data_args: DataArgs,
+#     model_args: ModelArgs,
+#     tokenizer: AutoTokenizer,
+# ):
+#     data_dict = {}
+#     for split in data_splits:
+#         data_file = os.path.join(data_args.data_dir, f"{split}.json")
+#         dataset = CustomDataset(
+#             fname=data_file,
+#             tokenizer=tokenizer,
+#             igonore_index=data_args.label_pad_token_id,
+#             prompt=model_args.prompt_template,
+#             use_system_prompt=model_args.use_system_prompt
+#         )
+#         data_dict[split] = dataset
+#     return data_dict
+
+
+
+# def data_prepare(
+#     splits,
+#     data_args,
+#     model_args,
+#     tokenizer,
+#     retriever=None,  # RAG retriever 추가
+#     use_rag=False,   # RAG 사용 여부
+#     rag_top_k=5      # 검색할 문서 수
+# ):
+#     from src.utils.qa_dataset import CustomDataset
+
+#     data_dict = {}
+#     for split in splits:
+#         fname = os.path.join(data_args.data_dir, f"{split}.json")
+#         data_dict[split] = CustomDataset(
+#             fname,
+#             tokenizer,
+#             retriever=retriever,  # retriever 전달
+#             use_rag=use_rag,      # RAG 사용 여부
+#             top_k=rag_top_k,      # 검색할 문서 수
+#             igonore_index=data_args.label_pad_token_id,
+#             prompt=model_args.prompt_template,
+#             use_system_prompt=model_args.use_system_prompt
+#         )
+#     return data_dict
+
+
+
 def data_prepare(
-    data_splits,
-    data_args: DataArgs,
-    model_args: ModelArgs,
-    tokenizer: AutoTokenizer,
+    splits,
+    data_args,
+    model_args,
+    tokenizer,
+    use_rag=False,   # RAG 사용 여부
 ):
+    from src.utils.qa_dataset import CustomDataset
+    
     data_dict = {}
-    for split in data_splits:
-        data_file = os.path.join(data_args.data_dir, f"{split}.json")
-        dataset = CustomDataset(
-            fname=data_file,
-            tokenizer=tokenizer,
+    for split in splits:
+        fname = os.path.join(data_args.data_dir, f"{split}.json")
+        data_dict[split] = CustomDataset(
+            fname,
+            tokenizer,
+            use_rag=use_rag,      # RAG 사용 여부
             igonore_index=data_args.label_pad_token_id,
             prompt=model_args.prompt_template,
             use_system_prompt=model_args.use_system_prompt
         )
-        data_dict[split] = dataset
     return data_dict
 
 
@@ -167,13 +219,14 @@ def generate_answer(
     # 전체 출력에서 assistant 이후 부분 추출
     full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-    # assistant 이후의 텍스트 찾기
-    if "assistant\n" in full_output:
+    if "[|assistant|]" in full_output:
+        text = full_output.split("[|assistant|]", 1)[1].strip()
+    elif "assistant\n" in full_output:
         text = full_output.split("assistant\n", 1)[1].strip()
     elif "assistant" in full_output:
         text = full_output.split("assistant", 1)[1].strip()
     else:
-        # gen_tokens 방식으로 fallback
+        # fallback
         gen_tokens = outputs[0][input_ids.size(0):]
         text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
 

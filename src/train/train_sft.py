@@ -16,7 +16,6 @@ from src.configs.config import (
     SFTTrainingArgs,
     BitsAndBytesArgs,
     LoraArgs,
-    # FSDPArgs
 )
 
 from sklearn.metrics import accuracy_score
@@ -41,6 +40,8 @@ def run_inference(
         bnb_config: BitsAndBytesConfig,
         target_name: str,
         sft_training_args: SFTTrainingArgs,
+        data_args: DataArgs,
+        use_rag: bool = False
 ):
     printi("Starting Inference")
 
@@ -56,9 +57,9 @@ def run_inference(
             ["test"],
             data_args,
             model_args,
-            tokenizer
+            tokenizer,
+            use_rag=use_rag
         )
-
 
     adapter_dir = os.path.join(model_dir, model_args.load_model)
     model = PeftModel.from_pretrained(
@@ -74,8 +75,8 @@ def run_inference(
 
     results = []
     for sample in tqdm(data_dict["test"], desc="Inference"):
-        sample_id = sample["id"]
         input_ids = sample["input_ids"]
+        original_data = sample["original_data"]
 
         answer_text, reasoning_text = generate_answer(
             model,
@@ -85,15 +86,12 @@ def run_inference(
             model_args=model_args,
         )
 
-        result = {
-            "id": sample_id,
-            "output": {
-                "answer": answer_text
-            },
-            "reasoning": reasoning_text if reasoning_text is not None else "",
+        original_data["output"] = {
+            "answer": answer_text,
         }
+        original_data["reasoning"] = reasoning_text if reasoning_text is not None else ""
 
-        results.append(result)
+        results.append(original_data)
 
     # 3) 파일 저장
     save_dir = os.path.join(model_dir, "pred_result")
@@ -117,14 +115,17 @@ def main(
     sft_training_args: SFTTrainingArgs,
     bits_and_bytes_args: BitsAndBytesArgs,
     lora_args: LoraArgs,
-    # fsdp_args: FSDPArgs
 ):
+    # DataArgs에 use_rag 설정 전달
+    data_args.set_use_rag(system_args.use_rag)
+
     # 0) 저장 경로 및 백업 설정
+    rag_suffix = "_with_rag" if system_args.use_rag else ""
     output_dir, target_name = create_out_dir(
         sft_training_args.output_dir,
         check_sft_type(system_args.use_lora, system_args.use_qlora, lora_args.use_dora),
         model_args.model_id.value,
-        system_args.additional_info,
+        system_args.additional_info + rag_suffix,
         backup_path=system_args.backup_path,
         current_stage=model_args.current_stage
     )
@@ -137,12 +138,12 @@ def main(
         bits_and_bytes_args,
         lora_args,
         sft_training_args,
-        # fsdp_args
     )
-
 
     if system_args.train:
         printi("Starting Training")
+        printi(f"Using RAG: {system_args.use_rag}")
+        printi(f"Data directory: {data_args.data_dir}")
 
         # 3) 모델, 토크나이저
         model, tokenizer = prepare_model_tokenmizer(
@@ -156,7 +157,8 @@ def main(
             ["train", "dev"],
             data_args,
             model_args,
-            tokenizer
+            tokenizer,
+            use_rag=system_args.use_rag
         )
 
         train_dataset_hf = Dataset.from_dict({
@@ -169,18 +171,16 @@ def main(
             "labels": [item['labels'] for item in data_dict["dev"]],
         })
 
-
         # Early Stopping 설정
         early_stopping_callback = [EarlyStoppingCallback(
             early_stopping_patience=model_args.early_stopping,
             early_stopping_threshold=0.0
         )] if model_args.early_stopping != False else None
 
-
         # 4) Trainer 설정
         printi(f"Changed output directory to: {sft_training_config.output_dir}")
         printi(f"Current stage: {model_args.current_stage}")
-        # model.print_trainable_parameters()
+
         trainer = SFTTrainer(
             model=model,
             args=sft_training_config,
@@ -211,7 +211,8 @@ def main(
             bnb_config=bnb_config,
             target_name=target_name,
             sft_training_args=sft_training_args,
-
+            data_args=data_args,
+            use_rag=system_args.use_rag
         )
         printi(f"Inference completed. Results saved in {sft_training_config.output_dir}/pred_result")
 
@@ -219,13 +220,8 @@ def main(
     printi("Finished all processes.")
 
 
-# def logits_to_cpu(logits, labels):
-#     preds = torch.argmax(logits, dim=-1).cpu().to(torch.int32)
-#     return preds, labels.cpu()
-
 def logits_to_cpu(logits, labels):
     return logits.cpu(), labels.cpu()
-
 
 
 if __name__ == "__main__":
@@ -235,8 +231,9 @@ if __name__ == "__main__":
     sft_training_args = SFTTrainingArgs()
     bits_and_bytes_args = BitsAndBytesArgs()
     lora_args = LoraArgs()
-    # fsdp_args = FSDPArgs()
+
     set_seed(system_args.seed)
     os.environ["HF_TOKEN"] = system_args.hf_token
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-    main(system_args, model_args, data_args, sft_training_args, bits_and_bytes_args, lora_args) # , fsdp_args)
+
+    main(system_args, model_args, data_args, sft_training_args, bits_and_bytes_args, lora_args)
