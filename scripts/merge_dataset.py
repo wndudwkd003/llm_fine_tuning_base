@@ -57,7 +57,9 @@ if __name__ == "__main__":
     data_number = "1-3-cot"
     original_dataset = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed_cot_refined_4.1_converted"
     other_datasets = [
-        "datasets/CLIcK_converted_cot_refined_4.1_converted"
+        "datasets/CLIcK_converted_cot_refined_4.1_converted",
+        "datasets/etri_qa_abc_cot_refined_4.1_converted"
+        # "datasets/CLIcK_converted_cot_refined_4.1_converted"
         # "datasets/CLIcK_converted",
         # "datasets/KoAlpaca-v1.1a_converted",
         # "datasets/etri_qa_a_converted",

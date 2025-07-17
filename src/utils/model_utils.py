@@ -134,9 +134,10 @@ def data_prepare(
     model_args,
     tokenizer,
     use_rag=False,   # RAG 사용 여부
+    is_test_and_drop_other_info=False,
 ):
     from src.utils.qa_dataset import CustomDataset
-    
+
     data_dict = {}
     for split in splits:
         fname = os.path.join(data_args.data_dir, f"{split}.json")
@@ -146,7 +147,8 @@ def data_prepare(
             use_rag=use_rag,      # RAG 사용 여부
             igonore_index=data_args.label_pad_token_id,
             prompt=model_args.prompt_template,
-            use_system_prompt=model_args.use_system_prompt
+            use_system_prompt=model_args.use_system_prompt,
+            is_test_and_drop_other_info=is_test_and_drop_other_info
         )
     return data_dict
 
@@ -193,22 +195,51 @@ def data_prepare(
 import re
 import torch
 
+from typing import List, Union, Optional
+
+def _sanitize_eos(
+    terminators: Optional[Union[int, List[Optional[int]]]],
+    tokenizer,
+) -> Union[int, List[int]]:
+    if terminators is None:
+        return tokenizer.eos_token_id
+
+    if isinstance(terminators, (list, tuple)):
+        cleaned = [tid for tid in terminators if tid is not None]
+        if not cleaned:
+            return tokenizer.eos_token_id
+        return cleaned if len(cleaned) > 1 else cleaned[0]
+
+    return terminators
+
 @torch.inference_mode()
 def generate_answer(
     model,
     tokenizer,
     input_ids,
-    terminators,
+    # terminators,
     model_args,
 ):
+
     device = next(model.parameters()).device
+
+    if not torch.is_tensor(input_ids):
+        input_ids = torch.tensor(input_ids, dtype=torch.long)
+
     input_ids = input_ids.to(device)
+    # eos_id = _sanitize_eos(terminators, tokenizer)
+    # pad_id = tokenizer.pad_token_id or tokenizer.eos_token_id or eos_id
+
+    # ② attention_mask dtype 명시
+    # attention_mask = torch.ones_like(input_ids, dtype=torch.long)
+
 
     outputs = model.generate(
         input_ids.unsqueeze(0),
         max_new_tokens=model_args.max_new_tokens,
-        eos_token_id=terminators,
-        pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id,
+        # attention_mask=attention_mask.unsqueeze(0),
+        # eos_token_id=eos_id,
+        # pad_token_id=pad_id,
         repetition_penalty=model_args.repetition_penalty,
         do_sample=model_args.do_sample,
         # temperature=model_args.temperature,
@@ -217,7 +248,10 @@ def generate_answer(
     )
 
     # 전체 출력에서 assistant 이후 부분 추출
-    full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    gen_tokens = outputs[0, input_ids.size(0):]
+    full_output = tokenizer.decode(gen_tokens, skip_special_tokens=True)
+
+    # print(f"Full output: {full_output}")  # 디버깅용 출력
 
     if "[|assistant|]" in full_output:
         text = full_output.split("[|assistant|]", 1)[1].strip()
@@ -225,11 +259,12 @@ def generate_answer(
         text = full_output.split("assistant\n", 1)[1].strip()
     elif "assistant" in full_output:
         text = full_output.split("assistant", 1)[1].strip()
+    # else:
+    #     # fallback
+    #     gen_tokens = outputs[0][input_ids.size(0):]
+    #     text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
     else:
-        # fallback
-        gen_tokens = outputs[0][input_ids.size(0):]
-        text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
-
+        text = full_output.strip()
 
     # 나머지 처리 로직...
     if "#" in text:

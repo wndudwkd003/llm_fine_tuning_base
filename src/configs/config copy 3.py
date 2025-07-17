@@ -8,10 +8,9 @@ from peft import TaskType
 
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
-VERSION = "1-3"
-FIT = "v1_fp16"
+VERSION = "1-3-cot"
+FIT = "V2_3.0_cot"
 LORA_RANK = 64
-LORA_ALPHA = LORA_RANK
 DROPOUT = 0.1
 
 # tensorboard --log_dir ~ --port 6006
@@ -23,7 +22,6 @@ class ModelId(Enum):
     #EXAONE3_5_IT_32B = "LGAI-EXAONE/EXAONE-3.5-32B-Instruct"
     #QWEN2_5_LEAD_14B = "v000000/Qwen2.5-14B-Gutenberg-1e-Delta"
     KANANA1_5_IT_8B = "kakaocorp/kanana-1.5-8b-instruct-2505"
-    KANANA1_5_BASE_8B = "kakaocorp/kanana-1.5-8b-base"
     QWEN2_5_IT_14B = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
 
 class DType(Enum):
@@ -39,14 +37,14 @@ class DType(Enum):
 
 @dataclass
 class SystemArgs:
-    additional_info: str = f"{VERSION}_early_r_{LORA_RANK}_alpha_{LORA_ALPHA}_dropout_{DROPOUT}_{FIT}"
+    additional_info: str = f"merge_no_aug_datasets_{VERSION}_early_r_{LORA_RANK}_dropout_{DROPOUT}_dosample_x_epoch_10_max_length_x_b_1_{FIT}"
     seed: int = 42
     hf_token: str = yaml.safe_load(open("src/configs/token.yaml", "r"))["hf_token"]
     backup_path: list[str] = field(default_factory=lambda: [
         "src/configs/config.py",
     ])
     use_lora: bool = True
-    use_qlora: bool = False
+    use_qlora: bool = True
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
     train: bool = True
@@ -59,27 +57,20 @@ class SystemArgs:
 
 @dataclass
 class ModelArgs:
-    model_id: ModelId = ModelId.KANANA1_5_IT_8B
-    dtype: DType = DType.FP16
+    model_id: ModelId = ModelId.QWEN2_5_IT_14B
+    dtype: DType = DType.BF16
     use_flash_attn2: bool = True
-    max_new_tokens: int = 1024
+    max_new_tokens: int = 512
     do_sample: bool = False
     top_p: float = 0.8
     temperature: float = 0.7
     repetition_penalty: float = 1.05
-    # prompt_template: str = (
-    #     # "You are a helpful AI assistant. Please answer the user's questions kindly. " #  Think about it step by step. "
-    #     "당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 대해 잘 알고 있는 유능한 AI 어시스턴트 입니다. "
-    #     "모든 질문에 대해 단계적으로 사고하고, 친절하고 정확하게 응답하십시오. 같은 문장을 반복하지 마시고, 질문 유형에 맞게 간결하게 답변해 주세요."
-    # )
     prompt_template: str = (
-        "You are a helpful AI assistant. Please answer the user's questions kindly. "
-        "당신은 도움이 되는 어시스턴트입니다. 당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 대해 잘 알고 있는 유능한 AI 어시스턴트 입니다. "
-        "사용자의 질문에 대해 친절하게 답변해주세요. 답변은 정확해야하고 틀리면 안됩니다. 그리고 동일한 문장을 절대 반복하지 마시오. "
-        "반드시 키워드가 정답이 아닐 수 있습니다."
+        "You are a helpful AI assistant. Please answer the user's questions kindly. " #  Think about it step by step. "
+        "당신은 도움이 되는 어시스턴트입니다. 출력은 <추론>추론내용</추론><답변><답변내용></답변> 형태로 작성하세요. "
+        "당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 대해 잘 알고 있는 유능한 AI 어시스턴트 입니다. "
+        "사용자의 질문에 대해 친절하게 답변해주세요. 단, 동일한 문장을 절대 반복하지 마시오."
     )
-
-
     is_test_and_drop_other_info: bool = False
 
 
@@ -87,7 +78,7 @@ class ModelArgs:
     early_stopping: int | bool = 3 # 5
     use_accelerate: bool = False
     load_model: str = "lora_adapter" # "lora_adapter"
-    is_cot: bool = False
+    is_cot: bool = True
     current_stage: str = ""  # "1-stage", "2-stage", "3-stage", "4-stage"
 
 
@@ -116,7 +107,7 @@ class DataArgs:
 class LoraArgs:
     task_type: TaskType = TaskType.CAUSAL_LM
     r: int = LORA_RANK # 128
-    lora_alpha: int = LORA_ALPHA # 128
+    lora_alpha: int = LORA_RANK # 128
     lora_dropout: float = DROPOUT # 0.05
     # target_modules: list[str] | str = "all-linear"
     # target_modules: list[str] | str = field(default_factory=lambda: [
@@ -132,8 +123,8 @@ class BitsAndBytesArgs:
     load_in_4bit: bool = True
     bnb_4bit_use_double_quant: bool = True
     bnb_4bit_quant_type: str = DType.NF4.value
-    bnb_4bit_compute_dtype: dtype = DType.FP16.value
-    bnb_4bit_quant_storage: dtype = DType.FP16.value
+    bnb_4bit_compute_dtype: dtype = DType.BF16.value
+    bnb_4bit_quant_storage: dtype = DType.BF16.value
 
     load_in_8bit: bool = False
     # bnb_8bit_compute_dtype: dtype = DType.FP16.value
@@ -142,7 +133,7 @@ class BitsAndBytesArgs:
 @dataclass
 class SFTTrainingArgs:
     output_dir: str = "output"
-    num_train_epochs: int = 5                # Epochs to train the model
+    num_train_epochs: int = 10                # Epochs to train the model
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     eval_accumulation_steps: int = 1
@@ -159,8 +150,8 @@ class SFTTrainingArgs:
     save_total_limit: int = 1
     logging_dir: str = "logs"
     report_to: list[str] | None = field(default_factory=lambda: ["tensorboard"])
-    fp16: bool = True
-    bf16: bool = False
+    fp16: bool = False
+    bf16: bool = True
     packing: bool = False
     # max_length: int = 4096
     gradient_checkpointing: bool = True

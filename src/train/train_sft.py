@@ -29,8 +29,10 @@ from src.utils.model_utils import (
     initialize_config,
     data_prepare,
     generate_answer,
-    prepare_model_tokenmizer
+    prepare_model_tokenmizer,
 )
+
+
 from src.utils.qa_dataset import DataCollatorForSupervisedDataset
 
 
@@ -58,7 +60,8 @@ def run_inference(
             data_args,
             model_args,
             tokenizer,
-            use_rag=use_rag
+            use_rag=use_rag,
+            is_test_and_drop_other_info=model_args.is_test_and_drop_other_info
         )
 
     adapter_dir = os.path.join(model_dir, model_args.load_model)
@@ -68,10 +71,11 @@ def run_inference(
     )
 
     # 2) 답변 생성
-    terminators = [
-        tokenizer.eos_token_id,
-        tokenizer.convert_tokens_to_ids("<|eot_id|>") if tokenizer.convert_tokens_to_ids("<|eot_id|>") else tokenizer.convert_tokens_to_ids("<|endoftext|>")
-    ]
+    # terminators = [
+    #     tokenizer.eos_token_id,
+    #     tokenizer.convert_tokens_to_ids("<|eot_id|>") if tokenizer.convert_tokens_to_ids("<|eot_id|>") else tokenizer.convert_tokens_to_ids("<|endoftext|>")
+    # ]
+
 
     results = []
     for sample in tqdm(data_dict["test"], desc="Inference"):
@@ -82,7 +86,7 @@ def run_inference(
             model,
             tokenizer,
             input_ids,
-            terminators,
+            # terminators,
             model_args=model_args,
         )
 
@@ -90,6 +94,8 @@ def run_inference(
             "answer": answer_text,
         }
         original_data["reasoning"] = reasoning_text if reasoning_text is not None else ""
+
+        printw(f"{answer_text}")
 
         results.append(original_data)
 
@@ -123,7 +129,7 @@ def main(
     rag_suffix = "_with_rag" if system_args.use_rag else ""
     output_dir, target_name = create_out_dir(
         sft_training_args.output_dir,
-        check_sft_type(system_args.use_lora, system_args.use_qlora, lora_args.use_dora),
+        check_sft_type(system_args.use_lora, system_args.use_qlora, lora_args.use_dora, lora_args.use_rslora),
         model_args.model_id.value,
         system_args.additional_info + rag_suffix,
         backup_path=system_args.backup_path,
@@ -158,7 +164,8 @@ def main(
             data_args,
             model_args,
             tokenizer,
-            use_rag=system_args.use_rag
+            use_rag=system_args.use_rag,
+            is_test_and_drop_other_info=model_args.is_test_and_drop_other_info  # 학습 모드로 설정
         )
 
         train_dataset_hf = Dataset.from_dict({

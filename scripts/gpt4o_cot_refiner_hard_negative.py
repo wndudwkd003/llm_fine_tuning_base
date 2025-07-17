@@ -2,9 +2,9 @@ import os, json, shutil, yaml, time
 from openai import OpenAI, RateLimitError
 import re
 
-DATA_PATH = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed"
+DATA_PATH = "datasets/etri_qa_abc"
 TARGET_PATH = DATA_PATH + "_cot_3-stage_refined_4.1"
-TARGET_FILE = {"train.json": True, "dev.json": True, "test.json": False}
+TARGET_FILE = {"train.json": True}
 YAML_PATH = "src/configs/token.yaml"
 USING_MODEL = "gpt-4.1-2025-04-14"
 

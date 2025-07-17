@@ -151,7 +151,7 @@ def main(
     # 0) 저장 경로 및 백업 설정
     output_dir, target_name = create_out_dir(
         dpo_training_args.output_dir,
-        check_sft_type(system_args.use_lora, system_args.use_qlora, lora_args.use_dora),
+        check_sft_type(system_args.use_lora, system_args.use_qlora, lora_args.use_dora, lora_args.use_rslora),
         model_args.model_id.value,
         system_args.additional_info,
         backup_path=system_args.backup_path,

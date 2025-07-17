@@ -1,9 +1,9 @@
 import os, json
 
-choose_data_dir = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed_cot_refined_4.1"
-stage_3_data_dir = "datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed_cot_3-stage_refined_4.1"
+choose_data_dir = "datasets/etri_qa_abc_cot_refined_4.1"
+stage_3_data_dir = "datasets/etri_qa_abc_cot_3-stage_refined_4.1"
 
-target = ["train.json", "dev.json"]
+target = ["train.json"]
 output_data_dir = choose_data_dir + "_3-stage_for_dpo"
 os.makedirs(output_data_dir, exist_ok=True)
 

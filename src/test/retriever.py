@@ -6,6 +6,7 @@ from src.configs.config import (
     RAGIndexArgs
 )
 from src.utils.print_utils import printi
+from src.test.build_db import advanced_preprocess_text
 
 
 class Retriever:
@@ -14,7 +15,6 @@ class Retriever:
         rag_index_args: RAGIndexArgs,
         device: str = "cuda"
     ):
-
         printi("Initializing Retriever")
         self.device = device
 
@@ -36,8 +36,13 @@ class Retriever:
         printi(f"Embedding model loaded: {rag_index_args.model_name}")
 
     def retrieve(self, query: str, top_k: int = 5):
+        # 쿼리 완전 전처리 (검색용)
+        processed_query = advanced_preprocess_text(query, use_morphological_analysis=True)
+        if not processed_query:
+            processed_query = query
+
         query_embedding = self.embedding_model.encode(
-            [query],
+            [processed_query],  # 전처리된 쿼리 사용
             convert_to_numpy=True,
             normalize_embeddings=True,
             device=self.device
@@ -48,7 +53,13 @@ class Retriever:
 
         results = []
         for idx in indices[0]:
-            meta = self.chunks[idx]
-            results.append(meta)
+            if idx != -1:
+                meta = self.chunks[idx]
+                results.append({
+                    "text": meta.get("model_text", meta.get("text", "")),  # LLM용 텍스트 반환
+                    "corpus": meta.get("corpus", "unknown"),
+                    "title": meta.get("title", "unknown"),
+                    "chunk_id": idx
+                })
 
         return results
