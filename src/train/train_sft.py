@@ -126,12 +126,12 @@ def main(
     data_args.set_use_rag(system_args.use_rag)
 
     # 0) 저장 경로 및 백업 설정
-    rag_suffix = "_with_rag" if system_args.use_rag else ""
+
     output_dir, target_name = create_out_dir(
         sft_training_args.output_dir,
         check_sft_type(system_args.use_lora, system_args.use_qlora, lora_args.use_dora, lora_args.use_rslora),
         model_args.model_id.value,
-        system_args.additional_info + rag_suffix,
+        system_args.additional_info,
         backup_path=system_args.backup_path,
         current_stage=model_args.current_stage
     )

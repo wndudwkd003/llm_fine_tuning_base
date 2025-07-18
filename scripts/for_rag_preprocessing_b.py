@@ -5,31 +5,16 @@ from src.configs.config import RAGIndexArgs
 from src.test.retriever import Retriever
 from src.utils.print_utils import printi, printw
 
-def convert_numpy_types(obj):
-    """numpy 타입을 JSON 직렬화 가능한 타입으로 변환"""
-    import numpy as np
-    if isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, dict):
-        return {key: convert_numpy_types(value) for key, value in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_numpy_types(item) for item in obj]
-    return obj
-
-
 def process_rag_queries_to_contexts(
     original_data_dir: str,
     output_data_dir: str,
     rag_index_args: RAGIndexArgs,
     splits: list = ["train", "dev"],  # test 제외 (기본값 변경)
-    top_k_per_query: int = 2  # 각 쿼리당 검색할 문서 수
+    top_k_per_query: int = 2,  # 각 쿼리당 검색할 문서 수
+    batch_size: int = 32  # 배치 크기 추가
 ):
     """
-    기존 데이터셋의 rag_queries를 사용해 RAG 검색 결과를 retrieved_contexts로 추가
+    기존 데이터셋의 rag_queries를 사용해 RAG 검색 결과를 retrieved_contexts로 추가 (배치 처리)
 
     Args:
         original_data_dir: 원본 데이터셋 경로
@@ -37,6 +22,7 @@ def process_rag_queries_to_contexts(
         rag_index_args: RAG 설정
         splits: 처리할 데이터 분할 리스트
         top_k_per_query: 각 rag_query당 검색할 문서 수
+        batch_size: 배치 처리 크기
     """
 
     # Retriever 초기화
@@ -61,31 +47,45 @@ def process_rag_queries_to_contexts(
         with open(input_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        # 각 샘플에 대해 RAG 검색 수행
+        # 배치 처리를 위한 쿼리 수집
+        all_queries = []
+        query_to_example_map = []  # (example_idx, query_idx) 매핑
+
+        printi(f"Collecting all queries for batch processing...")
+        for example_idx, example in enumerate(data):
+            rag_queries = example["output"].get("rag_queries", [])
+            for query_idx, query in enumerate(rag_queries):
+                all_queries.append(query)
+                query_to_example_map.append((example_idx, query_idx))
+
+        printi(f"Total queries to process: {len(all_queries)}")
+
+        # 배치 검색 수행
+        printi(f"Performing batch retrieval with batch_size={batch_size}...")
+        all_search_results = retriever.batch_retrieve(all_queries, top_k=top_k_per_query, batch_size=batch_size)
+
+        # 결과를 example별로 재구성
+        printi(f"Organizing results by examples...")
         processed_data = []
-        for example in tqdm(data, desc=f"Adding retrieved contexts to {split}", unit="example"):
-
-
-            question = example["input"].get("question", "")
-
-            # 모든 retrieved contexts 저장할 리스트
+        for example_idx, example in enumerate(tqdm(data, desc=f"Organizing results for {split}", unit="example")):
+            # 이 example에 해당하는 검색 결과들 찾기
             all_retrieved_contexts = []
 
-            # question으로 검색 수행
-            if question:
-                retrieved_docs = retriever.retrieve(question, top_k=top_k_per_query)  # top_k를 5로 변경
+            for result_idx, (ex_idx, query_idx) in enumerate(query_to_example_map):
+                if ex_idx == example_idx:
+                    query = example["output"]["rag_queries"][query_idx]
+                    retrieved_docs = all_search_results[result_idx]
 
-                # 검색 결과를 retrieved_contexts 형태로 변환
-                for doc in retrieved_docs:
-                    context = {
-                        "text": doc["text"],
-                        "title": doc.get("title", "unknown"),
-                        "chunk_id": doc.get("chunk_id", -1),
-                        # "query": question,  # 원본 질문으로 검색된 결과
-                        # "query_type": "question",  # 쿼리 타입 추가
-                        "score": doc.get("score", 0.0)  # 검색 점수 추가
-                    }
-                    all_retrieved_contexts.append(context)
+                    # 검색 결과를 retrieved_contexts 형태로 변환
+                    for doc in retrieved_docs:
+                        context = {
+                            "text": doc["text"],
+                            "source": doc.get("source", "unknown"),
+                            "chunk_id": doc.get("chunk_id", -1),
+                            "query": query,  # 어떤 쿼리로 검색된 결과인지 추가
+                            "score": doc.get("score", 0.0)  # 검색 점수 추가
+                        }
+                        all_retrieved_contexts.append(context)
 
             # 기존 데이터에 retrieved_contexts 추가
             example_with_contexts = example.copy()
@@ -94,11 +94,8 @@ def process_rag_queries_to_contexts(
             processed_data.append(example_with_contexts)
 
         # 저장
-        # with open(output_path, "w", encoding="utf-8") as f:
-        #     json.dump(processed_data, f, ensure_ascii=False, indent=2)
-
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(convert_numpy_types(processed_data), f, ensure_ascii=False, indent=2)
+            json.dump(processed_data, f, ensure_ascii=False, indent=2)
 
         printi(f"Saved {split} dataset with retrieved contexts to {output_path}")
 
@@ -118,6 +115,7 @@ def process_rag_queries_to_contexts(
             "index_dir": rag_index_args.index_dir,
             "model_name": rag_index_args.model_name,
             "top_k_per_query": top_k_per_query,
+            "batch_size": batch_size,
             "chunk_size": rag_index_args.chunk_size,
             "chunk_overlap": rag_index_args.chunk_overlap,
             "total_queries_per_example": "variable (based on rag_queries length)"
@@ -132,7 +130,7 @@ if __name__ == "__main__":
     rag_index_args = RAGIndexArgs()
 
     # 원본 데이터 경로
-    original_dir = "datasets/merged_dataset_no_aug_v1-3-cot_remove_duplication"
+    original_dir = "datasets/merged_dataset_no_aug_v1-3_rag_queries_remove_duplication"
 
     # RAG가 추가된 데이터를 저장할 경로
     output_dir = f"{original_dir}_for_rag"
@@ -142,6 +140,7 @@ if __name__ == "__main__":
         original_data_dir=original_dir,
         output_data_dir=output_dir,
         rag_index_args=rag_index_args,
-        splits=["train", "dev", "test"],  # dev.json과 train.json만 처리
-        top_k_per_query=5  # 각 쿼리당 2개씩 검색 (총 6개)
+        splits=["train", "dev"],  # dev.json과 train.json만 처리
+        top_k_per_query=2,  # 각 쿼리당 2개씩 검색 (총 6개)
+        batch_size=128  # 배치 크기
     )

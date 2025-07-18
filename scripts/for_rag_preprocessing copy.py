@@ -65,15 +65,17 @@ def process_rag_queries_to_contexts(
         processed_data = []
         for example in tqdm(data, desc=f"Adding retrieved contexts to {split}", unit="example"):
 
-
+            # rag_queries 추출
+            rag_queries = example["output"].get("rag_queries", [])
             question = example["input"].get("question", "")
 
             # 모든 retrieved contexts 저장할 리스트
             all_retrieved_contexts = []
 
-            # question으로 검색 수행
-            if question:
-                retrieved_docs = retriever.retrieve(question, top_k=top_k_per_query)  # top_k를 5로 변경
+            # 1. 각 rag_query에 대해 검색 수행
+            for query in rag_queries:
+                # RAG 검색 (각 쿼리당 top_k_per_query개)
+                retrieved_docs = retriever.retrieve(query, top_k=top_k_per_query)
 
                 # 검색 결과를 retrieved_contexts 형태로 변환
                 for doc in retrieved_docs:
@@ -81,8 +83,24 @@ def process_rag_queries_to_contexts(
                         "text": doc["text"],
                         "title": doc.get("title", "unknown"),
                         "chunk_id": doc.get("chunk_id", -1),
-                        # "query": question,  # 원본 질문으로 검색된 결과
-                        # "query_type": "question",  # 쿼리 타입 추가
+                        "query": query,  # 어떤 쿼리로 검색된 결과인지 추가
+                        "query_type": "rag_query",  # 쿼리 타입 추가
+                        "score": doc.get("score", 0.0)  # 검색 점수 추가
+                    }
+                    all_retrieved_contexts.append(context)
+
+            # 2. question으로도 검색 수행
+            if question:
+                retrieved_docs = retriever.retrieve(question, top_k=top_k_per_query)
+
+                # 검색 결과를 retrieved_contexts 형태로 변환
+                for doc in retrieved_docs:
+                    context = {
+                        "text": doc["text"],
+                        "title": doc.get("title", "unknown"),
+                        "chunk_id": doc.get("chunk_id", -1),
+                        "query": question,  # 원본 질문으로 검색된 결과
+                        "query_type": "question",  # 쿼리 타입 추가
                         "score": doc.get("score", 0.0)  # 검색 점수 추가
                     }
                     all_retrieved_contexts.append(context)
@@ -132,7 +150,7 @@ if __name__ == "__main__":
     rag_index_args = RAGIndexArgs()
 
     # 원본 데이터 경로
-    original_dir = "datasets/merged_dataset_no_aug_v1-3-cot_remove_duplication"
+    original_dir = "datasets/merged_dataset_no_aug_v1-3_rag_queries_remove_duplication"
 
     # RAG가 추가된 데이터를 저장할 경로
     output_dir = f"{original_dir}_for_rag"
@@ -142,6 +160,6 @@ if __name__ == "__main__":
         original_data_dir=original_dir,
         output_data_dir=output_dir,
         rag_index_args=rag_index_args,
-        splits=["train", "dev", "test"],  # dev.json과 train.json만 처리
-        top_k_per_query=5  # 각 쿼리당 2개씩 검색 (총 6개)
+        splits=["train", "dev"],  # dev.json과 train.json만 처리
+        top_k_per_query=2  # 각 쿼리당 2개씩 검색 (총 6개)
     )

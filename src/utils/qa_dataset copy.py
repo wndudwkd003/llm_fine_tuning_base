@@ -4,6 +4,55 @@ import torch
 from torch.utils.data import Dataset
 from tqdm.auto import tqdm
 
+# question type별 instruction 정의
+"""
+TYPE_INSTRUCTIONS = {
+                "선다형": (
+                    "[질문]을 잘 읽고 답변을 생성하시오. 문제를 그대로 출력하지 마시오.\n"
+                    "[지침] 주어진 보기 중에서 가장 적절한 답을 숫자로만 응답하시오.\n\n"
+                    # "[예시]\n"
+                    # "질문: 다음 한국의 전통 놀이 중 '조선시대'에 행한 놀이는?\n"
+                    # "1) 주사위 놀이\n"
+                    # "2) 검무\n"
+                    # "3) 격구\n"
+                    # "4) 영고\n"
+                    # "5) 무애무\n"
+                    # "답변: 3"
+                ),
+                "서술형": (
+                    "[질문]을 잘 읽고 답변을 생성하시오. 문제를 그대로 출력하지 마시오.\n"
+                    "[지침] 질문에 대한 답변을 완성된 문장으로 서술하시오.\n\n"
+                    # "[예시]\n"
+                    # "질문: 대한민국의 행정구역 체계를 서술하세요.\n"
+                    # "답변: 대한민국의 행정구역은 여러 종류의 지역 단위로 나뉘어 구성되어 있으며, 먼저 특별시와 광역시부터 살펴볼 수 있다. 특별시로는 수도인 서울특별시가 있으며, 광역시에는 인천광역시, 부산광역시, 대전광역시, 광주광역시, 대구광역시, 울산광역시 등이 포함된다. 이 외에도 대한민국은 일반 도 단위로 6개의 도를 두고 있는데, 그 이름은 경기도, 충청북도, 충청남도, 전라남도, 경상북도, 경상남도로 구성되어 있다. 특별한 자치권을 부여받은 도인 특별자치도로는 제주특별자치도, 전북특별자치도, 강원특별자치도가 있다. 마지막으로 특별자치시로는 세종특별자치시가 존재한다."
+                ),
+                "단답형": (
+                    "[질문]을 잘 읽고 답변을 생성하시오. 문제를 그대로 출력하지 마시오.\n"
+                    "[지침] 질문에 대한 답을 단답형으로 답하시오.\n\n"
+                    # "[예시]\n"
+                    # "질문: 조선 후기의 실학 사상가로 목민심서를 쓴 인물은?\n"
+                    # "답변: 정약용"
+                ),
+                "교정형": (
+                    "[질문]을 잘 읽고 답변을 생성하시오. 문제를 그대로 출력하지 마시오.\n"
+                    "[지침] 주어진 문장이 올바른지 판단하고, 틀린 경우 올바르게 교정하여 \"~가 옳다.\" 형태로 답변하고, 그 이유를 설명하시오.\n\n"
+                    # "[예시]\n"
+                    # "질문: 다음 문장에서 어문 규범에 부합하지 않는 부분을 찾아 고치고, 그 이유를 설명하세요.\n\"오늘은 퍼즐 마추기를 해 볼 거예요.\"\n"
+                    # "답변: \"오늘은 퍼즐 맞추기를 해 볼 거예요.\"가 옳다. '제자리에 맞게 붙이다, 주문하다, 똑바르게 하다, 비교하다' 등의 뜻이 있는 말은 '마추다'가 아닌 '맞추다'로 적는다."
+                ),
+                "선택형": (
+                    "[질문]을 잘 읽고 답변을 생성하시오. 문제를 그대로 출력하지 마시오.\n"
+                    "[지침] 주어진 보기들 중에서 가장 적절한 것을 선택하여 \"~가 옳다.\" 형태로 답변하고, 그 이유를 설명하시오.\n\n"
+                    # "[예시]\n"
+                    # "질문: \"나는 그를 본 적이 있음을 {기억해냈다/기억해 냈다}.\" 가운데 올바른 것을 선택하고, 그 이유를 설명하세요.\n"
+                    # "답변: \"나는 그를 본 적이 있음을 기억해 냈다.\"가 옳다. '기억해 냈다'는 '기억하-+-아+냈다'의 구성이다. 이처럼 '본용언+-아/-어+보조 용언' 구성인 경우 본용언과 보조 용언을 붙여 쓰는 것이 허용되지만, 이러한 구성을 갖더라도 앞말이 3음절 이상의 합성어나 파생어라면 보조 용언을 붙여 쓰는 것이 허용되지 않는다. '기억하다'는 '기억'과 '-하다'가 결합한 파생어이며 '기억해'는 3음절이다. 따라서 '기억해'와 '냈다'는 띄어 써야 한다."
+                )
+            }
+
+
+
+"""
+
 
 TYPE_INSTRUCTIONS = {
                 "선다형": (
@@ -14,7 +63,6 @@ TYPE_INSTRUCTIONS = {
                 ),
                 "단답형": (
                     "[지시사항] 질문을 잘 읽고 2단어 내외의 단답형으로 답하시오. 문제를 그대로 출력하지 마시오."
-
                 ),
             }
 
@@ -65,30 +113,9 @@ class CustomDataset(Dataset):
 
             # RAG로 검색한 문서가 있으면 추가
             if retrieved_contexts and len(retrieved_contexts) > 0:
-                # 중복 제거 (text 기준, 공백/줄바꿈 정규화)
-                seen_texts = set()
-                unique_contexts = []
-
-                for ctx in retrieved_contexts:
-                    text = ctx.get('text', '')
-
-                    # 텍스트 정규화 (공백/줄바꿈 정리)
-                    normalized_text = ' '.join(text.split())
-
-                    # 정규화된 텍스트로 중복 체크
-                    if normalized_text and normalized_text not in seen_texts:
-                        seen_texts.add(normalized_text)
-                        unique_contexts.append(ctx)
-
-                # score 기준으로 내림차순 정렬 후 상위 3개 선택
-                unique_contexts = sorted(unique_contexts, key=lambda x: x.get('score', 0.0), reverse=True)[:3]
-
-                # 선택된 컨텍스트로 참고 문서 생성
                 context_text = "[참고 문서]\n"
-                for i, ctx in enumerate(unique_contexts, 1):
-                    title = ctx.get('title', '제목 없음')
-                    text = ctx.get('text', '')
-                    context_text += f"{i}. 제목: {title}, {text}\n"
+                for i, ctx in enumerate(retrieved_contexts, 1):
+                    context_text += f"{i}. {ctx['text']}\n"
                 chat_parts.append(context_text)
 
             if other_info:
@@ -104,8 +131,6 @@ class CustomDataset(Dataset):
 
             # 최종 프롬프트 생성
             chat = " ".join(chat_parts)
-
-
 
             return chat
 
@@ -137,8 +162,6 @@ class CustomDataset(Dataset):
                     {"role": "user", "content": combined_prompt},
                 ]
 
-            # print("message:", message)
-
             source = tokenizer.apply_chat_template(
                 message,
                 add_generation_prompt=True,
@@ -149,38 +172,11 @@ class CustomDataset(Dataset):
             target = example.get("output", "")
             target_text = ""
 
-            # if target != "":
-            #     target_text = target.get("answer", "")
-            #     target_text += tokenizer.eos_token
-
-            # print("target_text:", target_text)
-
-            # target = tokenizer(
-            #     target_text,
-            #     return_attention_mask=False,
-            #     add_special_tokens=False,
-            #     return_tensors="pt"
-            # )
-            # target["input_ids"] = target["input_ids"].type(torch.int64)
-
-            # input_ids = torch.concat((source[0], target["input_ids"][0]))
-            # labels = torch.concat((torch.LongTensor([self.igonore_index] * source[0].shape[0]), target["input_ids"][0]))
-            # self.inp.append(input_ids)
-            # self.label.append(labels)
-
-
-            # 디버깅: target_text와 라벨 검증 추가
             if target != "":
                 target_text = target.get("answer", "")
                 target_text += tokenizer.eos_token
 
-            # print("target_text:", target_text)
-
-            # target_text 검증 추가
-            if not target_text or target_text == tokenizer.eos_token:
-                print(f"Warning: Empty or only EOS target text for example {example.get('id', 'unknown')}")
-                print(f"Original target: {target}")
-                continue  # 빈 target_text 건너뛰기
+            print("target_text:", target_text)
 
             target = tokenizer(
                 target_text,
@@ -190,51 +186,10 @@ class CustomDataset(Dataset):
             )
             target["input_ids"] = target["input_ids"].type(torch.int64)
 
-            # 토크나이징 결과 검증
-            if target["input_ids"].shape[1] == 0:
-                print(f"Warning: Empty tokenized target for example {example.get('id', 'unknown')}")
-                print(f"Target text: '{target_text}'")
-                continue  # 빈 토큰 건너뛰기
-
             input_ids = torch.concat((source[0], target["input_ids"][0]))
             labels = torch.concat((torch.LongTensor([self.igonore_index] * source[0].shape[0]), target["input_ids"][0]))
-
-            # 라벨 검증
-            valid_labels = labels[labels != self.igonore_index]
-            if len(valid_labels) == 0:
-                print(f"Warning: No valid labels for example {example.get('id', 'unknown')}")
-                print(f"Total labels: {len(labels)}, Ignore index count: {(labels == self.igonore_index).sum()}")
-                continue
-
-            # 샘플 정보 출력 (처음 5개만)
-            if len(self.inp) < 5:
-                print(f"Sample {len(self.inp)}: input_len={len(input_ids)}, valid_labels={len(valid_labels)}")
-                print(f"Target: '{target_text.strip()}'")
-                print(f"Labels range: [{labels.min()}, {labels.max()}]")
-
             self.inp.append(input_ids)
             self.label.append(labels)
-
-        # 생성자 마지막에 추가
-        print(f"\n=== Dataset Statistics ===")
-        print(f"Total samples loaded: {len(self.inp)}")
-        print(f"Total samples in original data: {len(data)}")
-        print(f"Samples filtered out: {len(data) - len(self.inp)}")
-
-        if len(self.inp) > 0:
-            # 평균 길이
-            avg_input_len = sum(len(inp) for inp in self.inp) / len(self.inp)
-            avg_valid_labels = sum((lbl != self.igonore_index).sum() for lbl in self.label) / len(self.label)
-
-            print(f"Average input length: {avg_input_len:.1f}")
-            print(f"Average valid labels per sample: {avg_valid_labels:.1f}")
-
-            # 라벨 분포
-            all_labels = torch.cat([lbl[lbl != self.igonore_index] for lbl in self.label])
-            print(f"Total valid labels: {len(all_labels)}")
-            print(f"Label value range: [{all_labels.min()}, {all_labels.max()}]")
-        else:
-            print("No valid samples found!")
 
     def __len__(self):
         return len(self.inp)

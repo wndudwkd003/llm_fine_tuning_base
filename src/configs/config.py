@@ -9,7 +9,7 @@ from peft import TaskType
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
 VERSION = "1-3"
-FIT = "v1_fp16"
+FIT = "v1_fp16_RAG"
 LORA_RANK = 64
 LORA_ALPHA = LORA_RANK
 DROPOUT = 0.1
@@ -54,12 +54,12 @@ class SystemArgs:
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
     dpo_dataset_create_mode: bool = False
-    use_rag: bool = False  # RAG 사용 여부
+    use_rag: bool = True  # RAG 사용 여부
 
 
 @dataclass
 class ModelArgs:
-    model_id: ModelId = ModelId.KANANA1_5_IT_8B
+    model_id: ModelId = ModelId.KANANA1_5_BASE_8B
     dtype: DType = DType.FP16
     use_flash_attn2: bool = True
     max_new_tokens: int = 1024
@@ -78,11 +78,7 @@ class ModelArgs:
         "사용자의 질문에 대해 친절하게 답변해주세요. 답변은 정확해야하고 틀리면 안됩니다. 그리고 동일한 문장을 절대 반복하지 마시오. "
         "반드시 키워드가 정답이 아닐 수 있습니다."
     )
-
-
     is_test_and_drop_other_info: bool = False
-
-
     use_system_prompt: bool = True
     early_stopping: int | bool = 3 # 5
     use_accelerate: bool = False
@@ -96,14 +92,10 @@ class DataArgs:
     pad_to_multiple_of: int | None = None
     label_pad_token_id: int = -100
     # base_data_dir: str = f"datasets/merged_dataset_no_aug_v{VERSION}"
-    base_data_dir: str = f"datasets/merged_dataset_no_aug_v{VERSION}"
+    base_data_dir: str = f"datasets/merged_dataset_no_aug_v1-3_remove_duplication_for_rag"
 
     @property
     def data_dir(self):
-        """SystemArgs의 use_rag 설정에 따라 적절한 데이터 경로 반환"""
-        # SystemArgs 인스턴스 가져오기 (main 함수에서 설정됨)
-        if hasattr(self, '_use_rag') and self._use_rag:
-            return f"{self.base_data_dir}_for_rag"
         return self.base_data_dir
 
     def set_use_rag(self, use_rag: bool):
@@ -142,7 +134,7 @@ class BitsAndBytesArgs:
 @dataclass
 class SFTTrainingArgs:
     output_dir: str = "output"
-    num_train_epochs: int = 5                # Epochs to train the model
+    num_train_epochs: int = 3                # Epochs to train the model
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     eval_accumulation_steps: int = 1
@@ -217,11 +209,11 @@ class DPOTrainingArgs:
 @dataclass
 class RAGIndexArgs:
     raw_text_dir: list[dict] = field(default_factory=lambda:[
-        {
-            "dir": "datasets/namuwikitext",
-            "base": "20200302",
-            "ext": ["train", "dev", "test"]
-        },
+        # {
+        #     "dir": "datasets/namuwikitext",
+        #     "base": "20200302",
+        #     "ext": ["train", "dev", "test"]
+        # },
         {
             "dir": "datasets/kowikitext",
             "base": "20200920",
@@ -229,7 +221,7 @@ class RAGIndexArgs:
         },
     ])
     # version: str   = "20200302"    # 파일명 날짜
-    index_dir: str = "rag_index"
+    index_dir: str = "rag_index/kowikitext"
     chunk_size: int = 512
     chunk_overlap: int = 20
     model_name: str = "nlpai-lab/KURE-v1" # "dragonkue/bge-m3-ko" # "jhgan/ko-sroberta-multitask"
