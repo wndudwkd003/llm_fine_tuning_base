@@ -9,7 +9,7 @@ from peft import TaskType
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
 VERSION = "1-3"
-FIT = "v1_2_fp16"
+FIT = "v1_2_1_fp16"
 LORA_RANK = 64
 LORA_ALPHA = LORA_RANK
 DROPOUT = 0.1
@@ -224,7 +224,7 @@ class RAGIndexArgs:
         },
     ])
     # version: str   = "20200302"    # 파일명 날짜
-    index_dir: str = "rag_index/kowikitext"
+    index_dir: str = "rag_index"
     chunk_size: int = 256
     chunk_overlap: int = 10
     model_name: str = "nlpai-lab/KURE-v1" # "dragonkue/bge-m3-ko" # "jhgan/ko-sroberta-multitask"

@@ -3,20 +3,46 @@ import os
 import torch
 from torch.utils.data import Dataset
 from tqdm.auto import tqdm
+from collections import Counter
+import re
 
 
 TYPE_INSTRUCTIONS = {
                 "선다형": (
-                    "[지시사항] 선다형 문제입니다. 질문을 잘 읽고 주어진 보기 중에서 정답을 숫자로만 답변하시오. 문제를 그대로 출력하지 마시오."
+                    "[지시사항] 질문을 잘 읽고 주어진 보기 중에서 정답을 숫자로만 답변하시오. 문제를 그대로 출력하지 마시오."
                 ),
                 "서술형": (
-                    "[지시사항] 서술형 문제입니다. 질문을 잘 읽고 300자~500자 이내의 자연스러운 문법으로 완성된 서술형으로 답변하세요. 최대한 자세히 적되, 핵심 단어를 놓치지 말고 정확하게 사실만 답하여야합니다. 그리고 문제를 그대로 출력하지 마시오."
+                    "[지시사항] 질문을 잘 읽고 300자 ~ 500자 이내로 완성된 서술형으로 답변하세요. 최대한 자세히 적되, 핵심 단어를 놓치지 말고 정확하게 사실만 답하여야합니다. 그리고 문제를 그대로 출력하지 마시오."
                 ),
                 "단답형": (
-                    "[지시사항] 단답형 문제입니다. 질문을 잘 읽고 5어절 이하의 단답형으로 답하시오. 문제를 그대로 출력하지 마시오."
+                    "[지시사항] 질문을 잘 읽고 2단어 내외의 단답형으로 답하시오. 문제를 그대로 출력하지 마시오."
 
                 ),
             }
+
+def has_excessive_repetition(text, max_repetition=5):
+    """
+    텍스트에서 동일한 단어가 max_repetition번 이상 반복되는지 확인
+
+    Args:
+        text: 검사할 텍스트
+        max_repetition: 허용되는 최대 반복 횟수 (기본값: 5)
+
+    Returns:
+        bool: 과도한 반복이 있으면 True, 없으면 False
+    """
+    # 공백과 특수문자로 단어 분리
+    words = re.findall(r'\b\w+\b', text.lower())
+
+    # 단어 빈도 계산
+    word_counts = Counter(words)
+
+    # 최대 반복 횟수를 초과하는 단어가 있는지 확인
+    for word, count in word_counts.items():
+        if count >= max_repetition:
+            return True
+
+    return False
 
 class CustomDataset(Dataset):
     def __init__(
@@ -27,18 +53,21 @@ class CustomDataset(Dataset):
             igonore_index=-100,
             prompt="",
             use_system_prompt=False,
-            is_test_and_drop_other_info=False
+            is_test_and_drop_other_info=False,
+            enable_length_filtering=False,  # 길이 필터링 활성화 여부
     ):
         self.igonore_index = igonore_index
         self.prompt = prompt
         self.use_system_prompt = use_system_prompt
         self.use_rag = use_rag
         self.is_test_and_drop_other_info = is_test_and_drop_other_info
+        self.enable_length_filtering = enable_length_filtering
 
-        self.remove_question_count = 500
+        self.remove_question_count = 400
         self.remove_answer_count = 500
-        self.top_k = 3
+        self.top_k = 5
         self.min_context_length = 15  # 최소 컨텍스트 길이
+        self.max_word_repetition = 5  # 최대 단어 반복 허용 횟수
 
         self.inp = []
         self.label = []
@@ -48,6 +77,7 @@ class CustomDataset(Dataset):
                     "category": "카테고리",
                     "topic_keyword": "키워드",
                     "domain": "도메인",
+                    "question_type": "질문 유형",
                 }
 
         with open(fname, "r") as f:
@@ -57,74 +87,75 @@ class CustomDataset(Dataset):
             # question type에 따른 instruction 선택
             instruction = TYPE_INSTRUCTIONS.get(inp['question_type'], "")
 
-            # 기타 정보 생성 (question과 question_type 제외)
-            other_info = {k: v for k, v in inp.items() if k not in ['question', 'question_type']}
-
-            # 테스트 모드이고 단답형인 경우 topic_keyword 제거
-            # if self.is_test_and_drop_other_info and inp.get('question_type') == '단답형':
-            #     # other_info.pop('topic_keyword', None)
-            #     other_info["topic_keyword"] = ""  # topic_keyword를 빈 문자열로 설정
+            # 기타 정보 생성 (question 제외)
+            other_info = {k: v for k, v in inp.items() if k not in ['question']}
 
             # 기타 정보가 있는 경우에만 추가
             chat_parts = [instruction]
 
             # RAG로 검색한 문서가 있으면 추가
             if retrieved_contexts and len(retrieved_contexts) > 0:
-                # 1단계: text 기준으로 중복 제거
+                # 1단계: 텍스트 중복 제거 (전체 컨텍스트에 대해)
                 seen_texts = set()
                 unique_contexts = []
                 for ctx in retrieved_contexts:
                     text = ctx.get('text', '')
-                    if text not in seen_texts:
+                    if text and text not in seen_texts:
                         seen_texts.add(text)
                         unique_contexts.append(ctx)
 
-                # 2단계: 공백 제거 후 15자 이하 텍스트 필터링
+                # 2단계: 길이 및 반복 필터링
                 filtered_contexts = []
                 for ctx in unique_contexts:
                     text = ctx.get('text', '')
-                    # 공백 제거 후 실제 텍스트 길이 확인
                     text_no_spaces = text.replace(" ", "")
-                    if len(text_no_spaces) > self.min_context_length:
-                        filtered_contexts.append(ctx)
 
-                # 3단계: title별로 그룹화하여 각 title당 최고 점수 하나씩만 선택
+                    # 길이 체크
+                    if len(text_no_spaces) <= self.min_context_length:
+                        continue
+
+                    # 단어 반복 체크
+                    if has_excessive_repetition(text, self.max_word_repetition):
+                        continue
+
+                    filtered_contexts.append(ctx)
+
+                # 3단계: title별로 그룹화하고 각 title에서 가장 높은 score를 가진 컨텍스트만 선택
                 title_best_contexts = {}
                 for ctx in filtered_contexts:
-                    title = ctx.get('title', '제목 없음')
+                    title = ctx.get('title', '')
                     score = ctx.get('score', 0.0)
 
-                    # 해당 title이 처음 나오거나, 더 높은 점수인 경우 업데이트
+                    # 같은 title이 없거나, 더 높은 score를 가진 경우에만 저장
                     if title not in title_best_contexts or score > title_best_contexts[title].get('score', 0.0):
                         title_best_contexts[title] = ctx
 
-                # 4단계: title별 최고 점수 컨텍스트들을 점수 기준으로 정렬 후 상위 선택
-                if title_best_contexts:
-                    unique_title_contexts = list(title_best_contexts.values())
-                    sorted_contexts = sorted(unique_title_contexts, key=lambda x: x.get('score', 0.0), reverse=True)[:self.top_k]
+                # 4단계: score 순으로 정렬하여 상위 5개 선택
+                final_contexts = sorted(title_best_contexts.values(), key=lambda x: x.get('score', 0.0), reverse=True)[:self.top_k]
 
-                    # 모든 필터링된 컨텍스트의 title을 중복 제거하여 수집
+                # 5단계: 검색 제목 및 참고 문서 생성
+                if final_contexts:
+                    # 모든 원본 검색 결과에서 제목 수집 (중복 제거)
                     all_titles = set()
-                    for ctx in filtered_contexts:
-                        title = ctx.get('title', '제목 없음')
-                        if title and title != '제목 없음':
+                    for ctx in retrieved_contexts:
+                        title = ctx.get('title', '')
+                        if title and title != '':
                             all_titles.add(title)
 
-                    # 검색 제목 섹션 추가 (title이 있는 경우에만)
+                    # 검색 제목 섹션 추가
                     if all_titles:
-                        titles_text = "[검색 제목] " + ", ".join(sorted(all_titles))
+                        titles_text = "[참고 문서 제목] " + ", ".join(sorted(all_titles))
                         chat_parts.append(titles_text)
 
-                    # 선택된 컨텍스트로 참고 문서 생성
+                    # 최종 선택된 컨텍스트로 참고 문서 생성
                     context_text = "[참고 문서] "
-                    for i, ctx in enumerate(sorted_contexts, 1):
-                        title = ctx.get('title', '제목 없음')
+                    for i, ctx in enumerate(final_contexts, 1):
+                        title = ctx.get('title', '')
                         text = ctx.get('text', '')
                         context_text += f"제목: {title}, 내용: {text} "
                     chat_parts.append(context_text)
 
             if other_info:
-
                 chat_parts.append("[기타 정보]")
                 info_list = []
                 for key, value in other_info.items():
@@ -147,23 +178,23 @@ class CustomDataset(Dataset):
         answer_filtered = 0
 
         for example in tqdm(data, desc="Loading dataset", unit="example"):
-            # 필터링 조건 확인
-            question = example["input"]["question"]
-            question_type = example["input"].get("question_type", "")
+            # 길이 필터링이 활성화된 경우에만 필터링 적용
+            if self.enable_length_filtering:
+                # 필터링 조건 확인
+                question = example["input"]["question"]
+                question_type = example["input"].get("question_type", "")
 
-            # 조건 1: question이 공백 제거 후 500자 초과인 경우 제외
-            # question_no_spaces = question.replace(" ", "")
-            if len(question) > self.remove_question_count:
-                question_filtered += 1
-                continue
-
-            # 조건 2: 서술형이면서 answer가 공백 제거 후 550자 초과인 경우 제외
-            if question_type == "서술형" and "output" in example:
-                answer = example["output"].get("answer", "")
-                # answer_no_spaces = answer.replace(" ", "")
-                if len(answer) > self.remove_answer_count:
-                    answer_filtered += 1
+                # 조건 1: question이 공백 제거 후 500자 초과인 경우 제외
+                if len(question) > self.remove_question_count:
+                    question_filtered += 1
                     continue
+
+                # 조건 2: 서술형이면서 answer가 공백 제거 후 550자 초과인 경우 제외
+                if question_type == "서술형" and "output" in example:
+                    answer = example["output"].get("answer", "")
+                    if len(answer) > self.remove_answer_count:
+                        answer_filtered += 1
+                        continue
 
             # 필터링 통과한 데이터만 처리
             self.original_data.append(example)
@@ -193,8 +224,6 @@ class CustomDataset(Dataset):
                     {"role": "user", "content": combined_prompt},
                 ]
 
-            # print("message:", message)
-
             source = tokenizer.apply_chat_template(
                 message,
                 add_generation_prompt=True,
@@ -208,8 +237,6 @@ class CustomDataset(Dataset):
             if target != "":
                 target_text = target.get("answer", "")
                 target_text += tokenizer.eos_token
-
-            # print("target_text:", target_text)
 
             target = tokenizer(
                 target_text,
@@ -228,11 +255,15 @@ class CustomDataset(Dataset):
 
         # 필터링 결과 출력
         print(f"\n=== 데이터 필터링 결과 ===")
+        print(f"길이 필터링 활성화: {'예' if self.enable_length_filtering else '아니오'}")
         print(f"원본 데이터 수: {original_count}")
-        print(f"질문 길이 초과로 제외된 데이터: {question_filtered} (질문 공백제거 후 > {self.remove_question_count}자)")
-        print(f"서술형 답변 길이 초과로 제외된 데이터: {answer_filtered} (서술형 답변 공백제거 후 > {self.remove_answer_count}자)")
+        if self.enable_length_filtering:
+            print(f"질문 길이 초과로 제외된 데이터: {question_filtered} (질문 > {self.remove_question_count}자)")
+            print(f"서술형 답변 길이 초과로 제외된 데이터: {answer_filtered} (서술형 답변 > {self.remove_answer_count}자)")
         print(f"최종 사용된 데이터 수: {filtered_count}")
-        print(f"제외 비율: {((original_count - filtered_count) / original_count * 100):.2f}%")
+        print(f"단어 반복 필터링: 동일 단어 {self.max_word_repetition}회 이상 반복 시 제거")
+        if self.enable_length_filtering:
+            print(f"제외 비율: {((original_count - filtered_count) / original_count * 100):.2f}%")
 
     def __len__(self):
         return len(self.inp)

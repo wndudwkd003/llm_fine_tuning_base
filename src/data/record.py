@@ -6,7 +6,7 @@ class Metadata:
     split: str
     title: str
     text: str  # 검색용 완전 전처리 텍스트
-    model_text: str  # LLM 모델용 가벼운 전처리 텍스트
+    # model_text: str  # LLM 모델용 가벼운 전처리 텍스트
     chunk_id: int = -1
 
 # @dataclass
