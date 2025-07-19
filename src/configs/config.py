@@ -9,7 +9,7 @@ from peft import TaskType
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
 VERSION = "1-3"
-FIT = "v1_1_fp16"
+FIT = "v1_2_fp16"
 LORA_RANK = 64
 LORA_ALPHA = LORA_RANK
 DROPOUT = 0.1

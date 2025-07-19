@@ -56,16 +56,49 @@ def extract_multiple_choice_options(question_text):
     return question_body, options
 
 
+def filter_and_deduplicate_contexts(contexts: list, min_text_length: int = 15) -> list:
+    """
+    검색된 컨텍스트들을 필터링하고 중복 제거
+
+    Args:
+        contexts: 검색된 컨텍스트 리스트
+        min_text_length: 최소 텍스트 길이
+
+    Returns:
+        필터링된 컨텍스트 리스트
+    """
+    seen_texts = set()
+    filtered_contexts = []
+
+    for context in contexts:
+        text = context["text"].strip()
+
+        # 짧은 텍스트 필터링
+        if len(text) <= min_text_length:
+            continue
+
+        # 중복 제거 (텍스트 기준)
+        if text in seen_texts:
+            continue
+
+        seen_texts.add(text)
+        filtered_contexts.append(context)
+
+    return filtered_contexts
+
+
 def process_rag_queries_to_contexts(
     original_data_dir: str,
     output_data_dir: str,
     rag_index_args: RAGIndexArgs,
     splits: list = ["train", "dev"],
-    top_k_per_query: int = 2
+    top_k_per_query: int = 10,
+    min_text_length: int = 15
 ):
     """
     기존 데이터셋의 rag_queries를 사용해 RAG 검색 결과를 retrieved_contexts로 추가
-    단답형 문제의 경우 보기를 분리해서 각각 검색
+    선다형 문제의 경우 질문+보기 조합으로 검색, 나머지는 질문 전체로 검색
+    검색 후 중복 제거 및 짧은 텍스트 필터링 적용
 
     Args:
         original_data_dir: 원본 데이터셋 경로
@@ -73,6 +106,7 @@ def process_rag_queries_to_contexts(
         rag_index_args: RAG 설정
         splits: 처리할 데이터 분할 리스트
         top_k_per_query: 각 rag_query당 검색할 문서 수
+        min_text_length: 최소 텍스트 길이 (이보다 짧은 텍스트는 필터링)
     """
 
     # Retriever 초기화
@@ -100,6 +134,8 @@ def process_rag_queries_to_contexts(
         # 각 샘플에 대해 RAG 검색 수행
         processed_data = []
         total_option_searches = 0
+        total_filtered_contexts = 0
+        total_original_contexts = 0
 
         for example in tqdm(data, desc=f"Adding retrieved contexts to {split}", unit="example"):
             question = example["input"].get("question", "")
@@ -109,56 +145,80 @@ def process_rag_queries_to_contexts(
             all_retrieved_contexts = []
 
             if question:
-                # 선다형 문제인 경우에만 보기 추출
                 if question_type == "선다형":
+                    # 선다형: 질문 본문과 보기 분리
                     question_body, options = extract_multiple_choice_options(question)
-                else:
-                    question_body, options = question, []
 
-                print("question_body:", question_body, "options:", options)
+                    print("question_body:", question_body, "options:", options)
 
-                # 1. 질문 본문으로 검색 수행
-                retrieved_docs = retriever.retrieve(question_body, top_k=top_k_per_query)
+                    if options:
+                        # 질문 + 각 보기 조합으로 검색
+                        for i, option in enumerate(options, 1):
+                            combined_query = f"{question_body} {option}"
+                            retrieved_docs = retriever.retrieve(combined_query, top_k=top_k_per_query)
+                            total_option_searches += 1
 
-                for doc in retrieved_docs:
-                    context = {
-                        "text": doc["text"],
-                        "title": doc.get("title", "unknown"),
-                        "chunk_id": doc.get("chunk_id", -1),
-                        "query": question_body,
-                        "query_type": "question_body",
-                        "score": doc.get("score", 0.0)
-                    }
-                    all_retrieved_contexts.append(context)
+                            for doc in retrieved_docs:
+                                context = {
+                                    "text": doc["text"],
+                                    "title": doc.get("title", "unknown"),
+                                    "chunk_id": doc.get("chunk_id", -1),
+                                    "query": combined_query,
+                                    "query_type": f"question_with_option_{i}",
+                                    "score": doc.get("score", 0.0)
+                                }
+                                # print(f"Retrieved context for question with option {i}: {context}")
+                                all_retrieved_contexts.append(context)
+                    else:
+                        # 보기가 파싱되지 않은 경우 질문 전체로 검색
+                        retrieved_docs = retriever.retrieve(question, top_k=top_k_per_query)
 
-                # 2. 각 보기로도 개별 검색 수행 (선다형이고 보기가 있는 경우)
-                if question_type == "선다형" and options:
-                    total_option_searches += len(options)
-                    # printi(f"Found {len(options)} options for multiple choice question: {question_body}...")
-
-                    for i, option in enumerate(options, 1):
-                        # 보기 텍스트만으로 검색
-                        option_retrieved_docs = retriever.retrieve(option, top_k=top_k_per_query)
-
-                        for doc in option_retrieved_docs:
+                        for doc in retrieved_docs:
                             context = {
                                 "text": doc["text"],
                                 "title": doc.get("title", "unknown"),
                                 "chunk_id": doc.get("chunk_id", -1),
-                                "query": option,
-                                "query_type": f"option_{i}",
+                                "query": question,
+                                "query_type": "full_question",
                                 "score": doc.get("score", 0.0)
                             }
+                            # print(f"Retrieved context for question without options: {context}")
                             all_retrieved_contexts.append(context)
 
-            # 기존 데이터에 retrieved_contexts 추가
+                else:
+                    # 선다형이 아닌 경우: 질문 전체로 검색
+                    retrieved_docs = retriever.retrieve(question, top_k=top_k_per_query)
+
+                    for doc in retrieved_docs:
+                        context = {
+                            "text": doc["text"],
+                            "title": doc.get("title", "unknown"),
+                            "chunk_id": doc.get("chunk_id", -1),
+                            "query": question,
+                            "query_type": "full_question",
+                            "score": doc.get("score", 0.0)
+                        }
+                        # print(f"Retrieved context for question: {context}")
+                        all_retrieved_contexts.append(context)
+
+            # 중복 제거 및 필터링 적용
+            original_count = len(all_retrieved_contexts)
+            filtered_contexts = filter_and_deduplicate_contexts(all_retrieved_contexts, min_text_length)
+            filtered_count = len(filtered_contexts)
+
+            total_original_contexts += original_count
+            total_filtered_contexts += filtered_count
+
+            # 기존 데이터에 필터링된 retrieved_contexts 추가
             example_with_contexts = example.copy()
-            example_with_contexts["retrieved_contexts"] = all_retrieved_contexts
+            example_with_contexts["retrieved_contexts"] = filtered_contexts
 
             # 디버깅을 위한 추가 정보 (선다형인 경우에만)
-            if question_type == "선다형" and options:
-                example_with_contexts["parsed_question_body"] = question_body
-                example_with_contexts["parsed_options"] = options
+            if question_type == "선다형":
+                question_body, options = extract_multiple_choice_options(question)
+                if options:
+                    example_with_contexts["parsed_question_body"] = question_body
+                    example_with_contexts["parsed_options"] = options
 
             processed_data.append(example_with_contexts)
 
@@ -178,7 +238,9 @@ def process_rag_queries_to_contexts(
         printi(f"  - Multiple choice examples: {multiple_choice_examples}")
         printi(f"  - Multiple choice examples with parsed options: {examples_with_options}")
         printi(f"  - Total option searches performed: {total_option_searches}")
-        printi(f"  - Total retrieved contexts: {total_contexts}")
+        printi(f"  - Original retrieved contexts: {total_original_contexts}")
+        printi(f"  - Filtered retrieved contexts: {total_filtered_contexts}")
+        printi(f"  - Filtered out contexts: {total_original_contexts - total_filtered_contexts}")
         printi(f"  - Average contexts per example: {avg_contexts_per_example:.1f}")
 
     printi(f"All datasets processed and saved to {output_data_dir}")
@@ -190,10 +252,12 @@ def process_rag_queries_to_contexts(
             "index_dir": rag_index_args.index_dir,
             "model_name": rag_index_args.model_name,
             "top_k_per_query": top_k_per_query,
+            "min_text_length": min_text_length,
             "chunk_size": rag_index_args.chunk_size,
             "chunk_overlap": rag_index_args.chunk_overlap,
-            "multiple_choice_processing": "enabled (only for question_type='선다형')",
-            "search_strategy": "question_body + individual_options (for 선다형 only)"
+            "multiple_choice_processing": "enabled (question+option combination for question_type='선다형')",
+            "search_strategy": "question+option_combination (for 선다형) / full_question (for others)",
+            "filtering": "text deduplication + minimum length filtering applied"
         }, f, ensure_ascii=False, indent=2)
 
     printi(f"RAG configuration saved to {config_path}")
@@ -206,7 +270,7 @@ if __name__ == "__main__":
     rag_index_args = RAGIndexArgs()
 
     # 원본 데이터 경로
-    original_dir = "datasets/merged_dataset_no_aug_v1-3-cot_remove_duplication"
+    original_dir = "datasets/merged_dataset_no_aug_v1-3_remove_duplication"
 
     # RAG가 추가된 데이터를 저장할 경로
     output_dir = f"{original_dir}_for_rag"
@@ -217,5 +281,6 @@ if __name__ == "__main__":
         output_data_dir=output_dir,
         rag_index_args=rag_index_args,
         splits=["train", "dev", "test"],
-        top_k_per_query=2  # 질문본문 2개 + 각 보기별 2개씩
+        top_k_per_query=10,
+        min_text_length=15   # 15자 이하 텍스트 제거
     )
