@@ -7,13 +7,13 @@ from tqdm.auto import tqdm
 
 TYPE_INSTRUCTIONS = {
                 "선다형": (
-                    "[지시사항] 선다형 문제입니다. 질문을 잘 읽고 주어진 보기 중에서 정답을 숫자로만 답변하시오. 문제를 그대로 출력하지 마시오."
+                    "[지시사항] 질문을 잘 읽고 주어진 보기 중에서 정답을 숫자로만 답변하시오. 문제를 그대로 출력하지 마시오."
                 ),
                 "서술형": (
-                    "[지시사항] 서술형 문제입니다. 질문을 잘 읽고 300자~500자 이내의 자연스러운 문법으로 완성된 서술형으로 답변하세요. 최대한 자세히 적되, 핵심 단어를 놓치지 말고 정확하게 사실만 답하여야합니다. 그리고 문제를 그대로 출력하지 마시오."
+                    "[지시사항] 질문을 잘 읽고 300자~500자 이내의 자연스러운 문법으로 완성된 서술형으로 답변하세요. 최대한 자세히 적되, 핵심 단어를 놓치지 말고 정확하게 사실만 답하여야합니다. 그리고 문제를 그대로 출력하지 마시오."
                 ),
                 "단답형": (
-                    "[지시사항] 단답형 문제입니다. 질문을 잘 읽고 5어절 이하의 단답형으로 답하시오. 문제를 그대로 출력하지 마시오."
+                    "[지시사항] 질문을 잘 읽고 5어절 이하의 단답형으로 답하시오. 문제를 그대로 출력하지 마시오."
 
                 ),
             }
@@ -37,8 +37,6 @@ class CustomDataset(Dataset):
 
         self.remove_question_count = 500
         self.remove_answer_count = 500
-        self.top_k = 3
-        self.min_context_length = 15  # 최소 컨텍스트 길이
 
         self.inp = []
         self.label = []
@@ -68,27 +66,19 @@ class CustomDataset(Dataset):
             # 기타 정보가 있는 경우에만 추가
             chat_parts = [instruction]
 
+
             # RAG로 검색한 문서가 있으면 추가
             if retrieved_contexts and len(retrieved_contexts) > 0:
-                # 1단계: text 기준으로 중복 제거
-                seen_texts = set()
-                unique_contexts = []
+                # 1단계: 텍스트 길이 필터링 (15자 이하 제거)
+                filtered_contexts = []
                 for ctx in retrieved_contexts:
                     text = ctx.get('text', '')
-                    if text not in seen_texts:
-                        seen_texts.add(text)
-                        unique_contexts.append(ctx)
-
-                # 2단계: 공백 제거 후 15자 이하 텍스트 필터링
-                filtered_contexts = []
-                for ctx in unique_contexts:
-                    text = ctx.get('text', '')
                     # 공백 제거 후 실제 텍스트 길이 확인
-                    text_no_spaces = text.replace(" ", "")
-                    if len(text_no_spaces) > self.min_context_length:
+                    cleaned_text = text.strip()
+                    if len(cleaned_text) > 15:
                         filtered_contexts.append(ctx)
 
-                # 3단계: title별로 그룹화하여 각 title당 최고 점수 하나씩만 선택
+                # 2단계: title별로 그룹화하여 최고 점수만 유지
                 title_best_contexts = {}
                 for ctx in filtered_contexts:
                     title = ctx.get('title', '제목 없음')
@@ -98,26 +88,14 @@ class CustomDataset(Dataset):
                     if title not in title_best_contexts or score > title_best_contexts[title].get('score', 0.0):
                         title_best_contexts[title] = ctx
 
-                # 4단계: title별 최고 점수 컨텍스트들을 점수 기준으로 정렬 후 상위 선택
-                if title_best_contexts:
-                    unique_title_contexts = list(title_best_contexts.values())
-                    sorted_contexts = sorted(unique_title_contexts, key=lambda x: x.get('score', 0.0), reverse=True)[:self.top_k]
+                # 3단계: title별 최고 점수 컨텍스트들을 점수 기준으로 정렬 후 상위 선택
+                unique_contexts = list(title_best_contexts.values())
+                unique_contexts = sorted(unique_contexts, key=lambda x: x.get('score', 0.0), reverse=True)[:5]
 
-                    # 모든 필터링된 컨텍스트의 title을 중복 제거하여 수집
-                    all_titles = set()
-                    for ctx in filtered_contexts:
-                        title = ctx.get('title', '제목 없음')
-                        if title and title != '제목 없음':
-                            all_titles.add(title)
-
-                    # 검색 제목 섹션 추가 (title이 있는 경우에만)
-                    if all_titles:
-                        titles_text = "[검색 제목] " + ", ".join(sorted(all_titles))
-                        chat_parts.append(titles_text)
-
-                    # 선택된 컨텍스트로 참고 문서 생성
+                # 선택된 컨텍스트로 참고 문서 생성
+                if unique_contexts:  # 필터링 후에도 컨텍스트가 있는 경우에만
                     context_text = "[참고 문서] "
-                    for i, ctx in enumerate(sorted_contexts, 1):
+                    for i, ctx in enumerate(unique_contexts, 1):
                         title = ctx.get('title', '제목 없음')
                         text = ctx.get('text', '')
                         context_text += f"제목: {title}, 내용: {text} "

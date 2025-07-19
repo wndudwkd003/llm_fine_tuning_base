@@ -6,7 +6,7 @@ import math
 # ────────────────────────────────────────
 # 1. 설정
 # ────────────────────────────────────────
-JSON_PATH = Path("datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed/dev.json")
+JSON_PATH = Path("datasets/sub_3_data_korean_culture_qa_V1.0_preprocessed/test.json")
 BIN_SIZE = 10         # 구간 폭(문자 수)
 MAX_BAR_WIDTH = 50    # 막대 최대 길이(문자)
 MAX_ID_SHOW = None    # 구간별 표시할 id 수 (None이면 모두 출력)

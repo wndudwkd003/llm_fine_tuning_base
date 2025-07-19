@@ -93,11 +93,13 @@ def process_rag_queries_to_contexts(
     rag_index_args: RAGIndexArgs,
     splits: list = ["train", "dev"],
     top_k_per_query: int = 10,
-    min_text_length: int = 15
+    min_text_length: int = 15,
+    keyword_top_k: int = 2
 ):
     """
     기존 데이터셋의 rag_queries를 사용해 RAG 검색 결과를 retrieved_contexts로 추가
     선다형 문제의 경우 질문+보기 조합으로 검색, 나머지는 질문 전체로 검색
+    topic_keyword가 있으면 무조건 키워드로도 검색하여 상위 2개 결과 포함
     검색 후 중복 제거 및 짧은 텍스트 필터링 적용
 
     Args:
@@ -107,6 +109,7 @@ def process_rag_queries_to_contexts(
         splits: 처리할 데이터 분할 리스트
         top_k_per_query: 각 rag_query당 검색할 문서 수
         min_text_length: 최소 텍스트 길이 (이보다 짧은 텍스트는 필터링)
+        keyword_top_k: topic_keyword 검색시 가져올 상위 결과 수
     """
 
     # Retriever 초기화
@@ -134,16 +137,36 @@ def process_rag_queries_to_contexts(
         # 각 샘플에 대해 RAG 검색 수행
         processed_data = []
         total_option_searches = 0
+        total_keyword_searches = 0
         total_filtered_contexts = 0
         total_original_contexts = 0
 
         for example in tqdm(data, desc=f"Adding retrieved contexts to {split}", unit="example"):
             question = example["input"].get("question", "")
             question_type = example["input"].get("question_type", "")
+            topic_keyword = example["input"].get("topic_keyword", "")
 
             # 모든 retrieved contexts 저장할 리스트
             all_retrieved_contexts = []
 
+            # 1. topic_keyword가 있으면 무조건 키워드로 검색 (상위 2개)
+            if topic_keyword and topic_keyword.strip():
+                keyword_retrieved_docs = retriever.retrieve(topic_keyword, top_k=keyword_top_k)
+                total_keyword_searches += 1
+
+                for doc in keyword_retrieved_docs:
+                    context = {
+                        "text": doc["text"],
+                        "title": doc.get("title", "unknown"),
+                        "chunk_id": doc.get("chunk_id", -1),
+                        "query": topic_keyword,
+                        "query_type": "topic_keyword",
+                        "score": doc.get("score", 0.0),
+                        "is_keyword_result": True  # 키워드 검색 결과임을 표시
+                    }
+                    all_retrieved_contexts.append(context)
+
+            # 2. 질문으로 검색
             if question:
                 if question_type == "선다형":
                     # 선다형: 질문 본문과 보기 분리
@@ -165,9 +188,9 @@ def process_rag_queries_to_contexts(
                                     "chunk_id": doc.get("chunk_id", -1),
                                     "query": combined_query,
                                     "query_type": f"question_with_option_{i}",
-                                    "score": doc.get("score", 0.0)
+                                    "score": doc.get("score", 0.0),
+                                    "is_keyword_result": False
                                 }
-                                # print(f"Retrieved context for question with option {i}: {context}")
                                 all_retrieved_contexts.append(context)
                     else:
                         # 보기가 파싱되지 않은 경우 질문 전체로 검색
@@ -180,9 +203,9 @@ def process_rag_queries_to_contexts(
                                 "chunk_id": doc.get("chunk_id", -1),
                                 "query": question,
                                 "query_type": "full_question",
-                                "score": doc.get("score", 0.0)
+                                "score": doc.get("score", 0.0),
+                                "is_keyword_result": False
                             }
-                            # print(f"Retrieved context for question without options: {context}")
                             all_retrieved_contexts.append(context)
 
                 else:
@@ -196,9 +219,9 @@ def process_rag_queries_to_contexts(
                             "chunk_id": doc.get("chunk_id", -1),
                             "query": question,
                             "query_type": "full_question",
-                            "score": doc.get("score", 0.0)
+                            "score": doc.get("score", 0.0),
+                            "is_keyword_result": False
                         }
-                        # print(f"Retrieved context for question: {context}")
                         all_retrieved_contexts.append(context)
 
             # 중복 제거 및 필터링 적용
@@ -233,11 +256,18 @@ def process_rag_queries_to_contexts(
         avg_contexts_per_example = total_contexts / len(processed_data) if processed_data else 0
         multiple_choice_examples = sum(1 for ex in processed_data if ex["input"].get("question_type") == "선다형")
         examples_with_options = sum(1 for ex in processed_data if ex.get("parsed_options"))
+        examples_with_keywords = sum(1 for ex in processed_data if ex["input"].get("topic_keyword", "").strip())
+
+        # 키워드 검색 결과 통계
+        keyword_contexts = sum(len([ctx for ctx in ex.get("retrieved_contexts", []) if ctx.get("is_keyword_result", False)]) for ex in processed_data)
 
         printi(f"  - Total examples: {len(processed_data)}")
         printi(f"  - Multiple choice examples: {multiple_choice_examples}")
         printi(f"  - Multiple choice examples with parsed options: {examples_with_options}")
+        printi(f"  - Examples with topic_keyword: {examples_with_keywords}")
         printi(f"  - Total option searches performed: {total_option_searches}")
+        printi(f"  - Total keyword searches performed: {total_keyword_searches}")
+        printi(f"  - Keyword search contexts retrieved: {keyword_contexts}")
         printi(f"  - Original retrieved contexts: {total_original_contexts}")
         printi(f"  - Filtered retrieved contexts: {total_filtered_contexts}")
         printi(f"  - Filtered out contexts: {total_original_contexts - total_filtered_contexts}")
@@ -252,11 +282,13 @@ def process_rag_queries_to_contexts(
             "index_dir": rag_index_args.index_dir,
             "model_name": rag_index_args.model_name,
             "top_k_per_query": top_k_per_query,
+            "keyword_top_k": keyword_top_k,
             "min_text_length": min_text_length,
             "chunk_size": rag_index_args.chunk_size,
             "chunk_overlap": rag_index_args.chunk_overlap,
             "multiple_choice_processing": "enabled (question+option combination for question_type='선다형')",
-            "search_strategy": "question+option_combination (for 선다형) / full_question (for others)",
+            "keyword_processing": f"enabled (top {keyword_top_k} results for topic_keyword)",
+            "search_strategy": "topic_keyword (mandatory if exists) + question+option_combination (for 선다형) / full_question (for others)",
             "filtering": "text deduplication + minimum length filtering applied"
         }, f, ensure_ascii=False, indent=2)
 
@@ -270,7 +302,7 @@ if __name__ == "__main__":
     rag_index_args = RAGIndexArgs()
 
     # 원본 데이터 경로
-    original_dir = "datasets/merged_dataset_no_aug_v1-3_remove_duplication"
+    original_dir = "datasets/merged_dataset_no_aug_v1-3-cot_remove_duplication"
 
     # RAG가 추가된 데이터를 저장할 경로
     output_dir = f"{original_dir}_for_rag"
@@ -282,5 +314,6 @@ if __name__ == "__main__":
         rag_index_args=rag_index_args,
         splits=["train", "dev", "test"],
         top_k_per_query=10,
-        min_text_length=15   # 15자 이하 텍스트 제거
+        min_text_length=15,   # 15자 이하 텍스트 제거
+        keyword_top_k=2       # topic_keyword 검색시 상위 2개 결과
     )

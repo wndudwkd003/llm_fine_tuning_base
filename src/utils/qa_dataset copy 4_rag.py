@@ -7,13 +7,13 @@ from tqdm.auto import tqdm
 
 TYPE_INSTRUCTIONS = {
                 "선다형": (
-                    "[지시사항] 선다형 문제입니다. 질문을 잘 읽고 주어진 보기 중에서 정답을 숫자로만 답변하시오. 문제를 그대로 출력하지 마시오."
+                    "[지시사항] 질문을 잘 읽고 주어진 보기 중에서 정답을 숫자로만 답변하시오. 문제를 그대로 출력하지 마시오."
                 ),
                 "서술형": (
-                    "[지시사항] 서술형 문제입니다. 질문을 잘 읽고 300자~500자 이내의 자연스러운 문법으로 완성된 서술형으로 답변하세요. 최대한 자세히 적되, 핵심 단어를 놓치지 말고 정확하게 사실만 답하여야합니다. 그리고 문제를 그대로 출력하지 마시오."
+                    "[지시사항] 질문을 잘 읽고 300자~500자 이내의 자연스러운 문법으로 완성된 서술형으로 답변하세요. 최대한 자세히 적되, 핵심 단어를 놓치지 말고 정확하게 사실만 답하여야합니다. 그리고 문제를 그대로 출력하지 마시오."
                 ),
                 "단답형": (
-                    "[지시사항] 단답형 문제입니다. 질문을 잘 읽고 5어절 이하의 단답형으로 답하시오. 문제를 그대로 출력하지 마시오."
+                    "[지시사항] 질문을 잘 읽고 5어절 이하의 단답형으로 답하시오. 문제를 그대로 출력하지 마시오."
 
                 ),
             }
@@ -38,7 +38,6 @@ class CustomDataset(Dataset):
         self.remove_question_count = 500
         self.remove_answer_count = 500
         self.top_k = 3
-        self.min_context_length = 15  # 최소 컨텍스트 길이
 
         self.inp = []
         self.label = []
@@ -85,35 +84,12 @@ class CustomDataset(Dataset):
                     text = ctx.get('text', '')
                     # 공백 제거 후 실제 텍스트 길이 확인
                     text_no_spaces = text.replace(" ", "")
-                    if len(text_no_spaces) > self.min_context_length:
+                    if len(text_no_spaces) > 15:
                         filtered_contexts.append(ctx)
 
-                # 3단계: title별로 그룹화하여 각 title당 최고 점수 하나씩만 선택
-                title_best_contexts = {}
-                for ctx in filtered_contexts:
-                    title = ctx.get('title', '제목 없음')
-                    score = ctx.get('score', 0.0)
-
-                    # 해당 title이 처음 나오거나, 더 높은 점수인 경우 업데이트
-                    if title not in title_best_contexts or score > title_best_contexts[title].get('score', 0.0):
-                        title_best_contexts[title] = ctx
-
-                # 4단계: title별 최고 점수 컨텍스트들을 점수 기준으로 정렬 후 상위 선택
-                if title_best_contexts:
-                    unique_title_contexts = list(title_best_contexts.values())
-                    sorted_contexts = sorted(unique_title_contexts, key=lambda x: x.get('score', 0.0), reverse=True)[:self.top_k]
-
-                    # 모든 필터링된 컨텍스트의 title을 중복 제거하여 수집
-                    all_titles = set()
-                    for ctx in filtered_contexts:
-                        title = ctx.get('title', '제목 없음')
-                        if title and title != '제목 없음':
-                            all_titles.add(title)
-
-                    # 검색 제목 섹션 추가 (title이 있는 경우에만)
-                    if all_titles:
-                        titles_text = "[검색 제목] " + ", ".join(sorted(all_titles))
-                        chat_parts.append(titles_text)
+                # 3단계: score 높은 순서로 정렬 후 상위 3개 선택
+                if filtered_contexts:
+                    sorted_contexts = sorted(filtered_contexts, key=lambda x: x.get('score', 0.0), reverse=True)[:self.top_k]
 
                     # 선택된 컨텍스트로 참고 문서 생성
                     context_text = "[참고 문서] "
@@ -151,13 +127,13 @@ class CustomDataset(Dataset):
             question = example["input"]["question"]
             question_type = example["input"].get("question_type", "")
 
-            # 조건 1: question이 공백 제거 후 500자 초과인 경우 제외
+            # 조건 1: question이 공백 제거 후
             # question_no_spaces = question.replace(" ", "")
             if len(question) > self.remove_question_count:
                 question_filtered += 1
                 continue
 
-            # 조건 2: 서술형이면서 answer가 공백 제거 후 550자 초과인 경우 제외
+            # 조건 2: 서술형이면서 answer가 공백 제거 후
             if question_type == "서술형" and "output" in example:
                 answer = example["output"].get("answer", "")
                 # answer_no_spaces = answer.replace(" ", "")

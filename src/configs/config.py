@@ -49,7 +49,7 @@ class SystemArgs:
     use_qlora: bool = False
     # 반드시 train 또는 test는 하나만 true로 설정할 것
     # True or False
-    train: bool = True
+    train: bool = False
     test: bool = False if train else True
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
@@ -62,7 +62,7 @@ class ModelArgs:
     model_id: ModelId = ModelId.KANANA1_5_BASE_8B
     dtype: DType = DType.FP16
     use_flash_attn2: bool = True
-    max_new_tokens: int = 1024
+    max_new_tokens: int = 2024
     do_sample: bool = False
     top_p: float = 0.8
     temperature: float = 0.7
@@ -80,7 +80,7 @@ class ModelArgs:
     )
     is_test_and_drop_other_info: bool = False
     use_system_prompt: bool = True
-    early_stopping: int | bool = 3 # 5
+    early_stopping: int | bool = 2 # 5
     use_accelerate: bool = False
     load_model: str = "lora_adapter" # "lora_adapter"
     is_cot: bool = False
