@@ -9,7 +9,7 @@ from peft import TaskType
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
 VERSION = "1-3"
-FIT = "v1_fp16_RAG"
+FIT = "v1_1_fp16"
 LORA_RANK = 64
 LORA_ALPHA = LORA_RANK
 DROPOUT = 0.1
@@ -54,7 +54,7 @@ class SystemArgs:
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
     dpo_dataset_create_mode: bool = False
-    use_rag: bool = True  # RAG 사용 여부
+    use_rag: bool = False  # RAG 사용 여부
 
 
 @dataclass
@@ -92,10 +92,14 @@ class DataArgs:
     pad_to_multiple_of: int | None = None
     label_pad_token_id: int = -100
     # base_data_dir: str = f"datasets/merged_dataset_no_aug_v{VERSION}"
-    base_data_dir: str = f"datasets/merged_dataset_no_aug_v1-3_remove_duplication_for_rag"
+    base_data_dir: str = f"datasets/merged_dataset_no_aug_v{VERSION}_remove_duplication"
 
     @property
     def data_dir(self):
+        """SystemArgs의 use_rag 설정에 따라 적절한 데이터 경로 반환"""
+        # SystemArgs 인스턴스 가져오기 (main 함수에서 설정됨)
+        if hasattr(self, '_use_rag') and self._use_rag:
+            return f"{self.base_data_dir}_for_rag"
         return self.base_data_dir
 
     def set_use_rag(self, use_rag: bool):
@@ -126,15 +130,14 @@ class BitsAndBytesArgs:
     bnb_4bit_quant_type: str = DType.NF4.value
     bnb_4bit_compute_dtype: dtype = DType.FP16.value
     bnb_4bit_quant_storage: dtype = DType.FP16.value
-
-    load_in_8bit: bool = False
+    # load_in_8bit: bool = False
     # bnb_8bit_compute_dtype: dtype = DType.FP16.value
 
 
 @dataclass
 class SFTTrainingArgs:
     output_dir: str = "output"
-    num_train_epochs: int = 3                # Epochs to train the model
+    num_train_epochs: int = 5                # Epochs to train the model
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     eval_accumulation_steps: int = 1
@@ -222,8 +225,8 @@ class RAGIndexArgs:
     ])
     # version: str   = "20200302"    # 파일명 날짜
     index_dir: str = "rag_index/kowikitext"
-    chunk_size: int = 512
-    chunk_overlap: int = 20
+    chunk_size: int = 256
+    chunk_overlap: int = 10
     model_name: str = "nlpai-lab/KURE-v1" # "dragonkue/bge-m3-ko" # "jhgan/ko-sroberta-multitask"
     batch_size: int = 512
     index_base: str = "rag_flat.index"

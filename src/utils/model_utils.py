@@ -225,21 +225,16 @@ def generate_answer(
 
     if not torch.is_tensor(input_ids):
         input_ids = torch.tensor(input_ids, dtype=torch.long)
-
     input_ids = input_ids.to(device)
-    # eos_id = _sanitize_eos(terminators, tokenizer)
-    # pad_id = tokenizer.pad_token_id or tokenizer.eos_token_id or eos_id
 
-    # ② attention_mask dtype 명시
-    # attention_mask = torch.ones_like(input_ids, dtype=torch.long)
-
+    attention_mask = (input_ids != tokenizer.pad_token_id).long().to(device)
+    pad_id = tokenizer.pad_token_id
 
     outputs = model.generate(
         input_ids.unsqueeze(0),
         max_new_tokens=model_args.max_new_tokens,
-        # attention_mask=attention_mask.unsqueeze(0),
-        # eos_token_id=eos_id,
-        # pad_token_id=pad_id,
+        attention_mask=attention_mask.unsqueeze(0),
+        pad_token_id=pad_id,
         repetition_penalty=model_args.repetition_penalty,
         do_sample=model_args.do_sample,
         # temperature=model_args.temperature,
@@ -341,11 +336,14 @@ def prepare_model_tokenmizer(
         model_args.model_id.value,
         trust_remote_code=True,
         use_fast=True,
+        # model_max_length=8096
     )
+
 
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    model.config.pad_token_id = tokenizer.pad_token_id
 
     count_trainable_params(model)
     print("Model and tokenizer prepared successfully.")

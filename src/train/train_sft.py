@@ -158,6 +158,7 @@ def main(
             is_train=True,  # Training mode
             gradient_checkpointing=sft_training_config.gradient_checkpointing
         )
+        print("model.config.max_position_embeddings", model.config.max_position_embeddings)
 
         data_dict = data_prepare(
             ["train", "dev"],

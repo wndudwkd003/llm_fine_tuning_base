@@ -112,34 +112,11 @@ class CustomDataset(Dataset):
             # 최종 프롬프트 생성
             chat = " ".join(chat_parts)
 
+
+
             return chat
 
-        # 데이터 필터링 및 통계 수집
-        original_count = len(data)
-        filtered_count = 0
-        question_filtered = 0
-        answer_filtered = 0
-
         for example in tqdm(data, desc="Loading dataset", unit="example"):
-            # 필터링 조건 확인
-            question = example["input"]["question"]
-            question_type = example["input"].get("question_type", "")
-
-            # 조건 1: question이 공백 제거 후 500자 초과인 경우 제외
-            question_no_spaces = question.replace(" ", "")
-            if len(question_no_spaces) > 500:
-                question_filtered += 1
-                continue
-
-            # 조건 2: 서술형이면서 answer가 공백 제거 후 550자 초과인 경우 제외
-            if question_type == "서술형" and "output" in example:
-                answer = example["output"].get("answer", "")
-                answer_no_spaces = answer.replace(" ", "")
-                if len(answer_no_spaces) > 550:
-                    answer_filtered += 1
-                    continue
-
-            # 필터링 통과한 데이터만 처리
             self.original_data.append(example)
 
             # 미리 검색된 RAG 결과 사용
@@ -197,16 +174,6 @@ class CustomDataset(Dataset):
             labels = torch.concat((torch.LongTensor([self.igonore_index] * source[0].shape[0]), target["input_ids"][0]))
             self.inp.append(input_ids)
             self.label.append(labels)
-
-            filtered_count += 1
-
-        # 필터링 결과 출력
-        print(f"\n=== 데이터 필터링 결과 ===")
-        print(f"원본 데이터 수: {original_count}")
-        print(f"질문 길이 초과로 제외된 데이터: {question_filtered} (질문 공백제거 후 > 500자)")
-        print(f"서술형 답변 길이 초과로 제외된 데이터: {answer_filtered} (서술형 답변 공백제거 후 > 550자)")
-        print(f"최종 사용된 데이터 수: {filtered_count}")
-        print(f"제외 비율: {((original_count - filtered_count) / original_count * 100):.2f}%")
 
     def __len__(self):
         return len(self.inp)
