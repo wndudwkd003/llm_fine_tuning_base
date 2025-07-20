@@ -55,6 +55,7 @@ class CustomDataset(Dataset):
             use_system_prompt=False,
             is_test_and_drop_other_info=False,
             enable_length_filtering=False,  # 길이 필터링 활성화 여부
+            use_cot=False,  # CoT 사용 여부 추가
     ):
         self.igonore_index = igonore_index
         self.prompt = prompt
@@ -62,16 +63,45 @@ class CustomDataset(Dataset):
         self.use_rag = use_rag
         self.is_test_and_drop_other_info = is_test_and_drop_other_info
         self.enable_length_filtering = enable_length_filtering
+        self.use_cot = use_cot  # CoT 사용 여부 저장
+        self.tokenizer = tokenizer  # 토크나이저 저장
 
         self.remove_question_count = 400
         self.remove_answer_count = 500
-        self.top_k = 5
+        self.top_k = 2  # 기본값을 5로 변경
         self.min_context_length = 15  # 최소 컨텍스트 길이
         self.max_word_repetition = 5  # 최대 단어 반복 허용 횟수
+
+        # 동적 길이 조정을 위한 임계값들 (토큰 단위)
+        # 답변 길이에 따른 예약 토큰 설정
+        if self.use_cot:
+            self.answer_reserve_tokens = 2500  # CoT: 2000자 ≈ 2500토큰
+            print(f"CoT 모드: 답변용 {self.answer_reserve_tokens} 토큰 예약")
+        else:
+            self.answer_reserve_tokens = 700   # 일반: 550자 ≈ 700토큰
+            print(f"일반 모드: 답변용 {self.answer_reserve_tokens} 토큰 예약")
+
+        # 전체 모델 길이에서 답변 예약 토큰을 뺀 입력 가능 길이
+        self.model_max_length = 32768
+        self.max_input_tokens = self.model_max_length - self.answer_reserve_tokens
+
+        # 청크 1개 ≈ 256토큰, 포맷팅 포함 ≈ 270토큰으로 계산
+        self.chunk_estimated_tokens = 270  # 청크 1개당 예상 토큰 수 (256 + 제목/포맷팅 약 10-15토큰)
+        # 기본 프롬프트 토큰에 따른 top_k 조정 임계값
+        self.length_thresholds = [
+            self.max_input_tokens - (2 * self.chunk_estimated_tokens),  # top_k=2
+            self.max_input_tokens - (3 * self.chunk_estimated_tokens),  # top_k=3
+            self.max_input_tokens - (4 * self.chunk_estimated_tokens),  # top_k=4
+            self.max_input_tokens - (5 * self.chunk_estimated_tokens),  # top_k=5
+        ]
 
         self.inp = []
         self.label = []
         self.original_data = []
+
+        # 통계 수집용
+        self.topk_usage_stats = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0}
+        self.skipped_count = 0
 
         mapping = {
                     "category": "카테고리",
@@ -83,19 +113,35 @@ class CustomDataset(Dataset):
         with open(fname, "r") as f:
             data = json.load(f)
 
-        def make_chat(inp, retrieved_contexts=None):
+        def make_chat_with_dynamic_topk(inp, retrieved_contexts=None):
+            """동적 top_k 조정을 포함한 채팅 생성 함수"""
             # question type에 따른 instruction 선택
             instruction = TYPE_INSTRUCTIONS.get(inp['question_type'], "")
 
             # 기타 정보 생성 (question 제외)
             other_info = {k: v for k, v in inp.items() if k not in ['question']}
 
-            # 기타 정보가 있는 경우에만 추가
+            # 기본 chat_parts 구성
             chat_parts = [instruction]
 
-            # RAG로 검색한 문서가 있으면 추가
+            if other_info:
+                chat_parts.append("[기타 정보]")
+                info_list = []
+                for key, value in other_info.items():
+                    if value is not None and value != "":
+                        info_list.append(f"{mapping[key]}: {value}")
+                chat_parts.append(",".join(info_list))
+
+            # 질문 추가
+            chat_parts.append(f"[질문] {inp['question']}")
+
+            # 기본 프롬프트로 토큰 길이 측정
+            base_chat = " ".join(chat_parts)
+            base_tokens = len(self.tokenizer.encode(base_chat))
+
+            # RAG 컨텍스트 처리
             if retrieved_contexts and len(retrieved_contexts) > 0:
-                # 1단계: 텍스트 중복 제거 (전체 컨텍스트에 대해)
+                # 1단계: 기본 필터링 (기존과 동일)
                 seen_texts = set()
                 unique_contexts = []
                 for ctx in retrieved_contexts:
@@ -110,42 +156,88 @@ class CustomDataset(Dataset):
                     text = ctx.get('text', '')
                     text_no_spaces = text.replace(" ", "")
 
-                    # 길이 체크
                     if len(text_no_spaces) <= self.min_context_length:
                         continue
 
-                    # 단어 반복 체크
                     if has_excessive_repetition(text, self.max_word_repetition):
                         continue
 
                     filtered_contexts.append(ctx)
 
-                # 3단계: title별로 그룹화하고 각 title에서 가장 높은 score를 가진 컨텍스트만 선택
+                # 3단계: title별로 그룹화
                 title_best_contexts = {}
                 for ctx in filtered_contexts:
                     title = ctx.get('title', '')
                     score = ctx.get('score', 0.0)
 
-                    # 같은 title이 없거나, 더 높은 score를 가진 경우에만 저장
                     if title not in title_best_contexts or score > title_best_contexts[title].get('score', 0.0):
                         title_best_contexts[title] = ctx
 
-                # 4단계: score 순으로 정렬하여 상위 5개 선택
-                final_contexts = sorted(title_best_contexts.values(), key=lambda x: x.get('score', 0.0), reverse=True)[:self.top_k]
+                # 4단계: 동적 top_k 결정 (청크 크기 기반)
+                sorted_contexts = sorted(title_best_contexts.values(), key=lambda x: x.get('score', 0.0), reverse=True)
 
-                # 5단계: 검색 제목 및 참고 문서 생성
+                # 기본 토큰 길이에 따라 top_k 조정
+                available_tokens = self.max_input_tokens - base_tokens
+                max_possible_contexts = available_tokens // self.chunk_estimated_tokens
+
+                if base_tokens > self.length_thresholds[0]:  # top_k=2
+                    current_top_k = min(2, max_possible_contexts)
+                elif base_tokens > self.length_thresholds[1]:  # top_k=3
+                    current_top_k = min(3, max_possible_contexts)
+                elif base_tokens > self.length_thresholds[2]:  # top_k=4
+                    current_top_k = min(4, max_possible_contexts)
+                else:
+                    current_top_k = min(self.top_k, max_possible_contexts)  # 5
+
+                # 최소 1개는 보장하되, 토큰이 부족하면 0개
+                current_top_k = max(0, current_top_k)
+
+                # 모든 원본 검색 결과에서 제목 수집 (중복 제거) - 먼저 준비
+                all_titles = set()
+                for ctx in retrieved_contexts:
+                    title = ctx.get('title', '')
+                    if title and title != '':
+                        all_titles.add(title)
+
+                # 제목 섹션을 고정으로 추가 (모든 검색 결과 제목 포함)
+                temp_chat_parts = chat_parts.copy()
+                if all_titles:
+                    titles_text = "[참고 문서 제목] " + ", ".join(sorted(all_titles))
+                    temp_chat_parts.insert(-1, titles_text)  # 질문 앞에 삽입
+
+                # 제목 포함된 기본 토큰 길이 측정
+                base_with_titles = " ".join(temp_chat_parts)
+                base_with_titles_tokens = len(self.tokenizer.encode(base_with_titles))
+
+                # 컨텍스트를 하나씩 추가하면서 토큰 길이 확인
+                final_contexts = []
+                for i, ctx in enumerate(sorted_contexts[:current_top_k]):
+                    # 임시로 컨텍스트 추가해보기
+                    temp_contexts = final_contexts + [ctx]
+
+                    # 참고 문서 섹션만 생성 (제목은 이미 포함됨)
+                    context_text = "[참고 문서] "
+                    for j, temp_ctx in enumerate(temp_contexts, 1):
+                        title = temp_ctx.get('title', '')
+                        text = temp_ctx.get('text', '')
+                        context_text += f"제목: {title}, 내용: {text} "
+
+                    # 컨텍스트만 토큰화해서 기본 토큰에 더하기 (효율적)
+                    context_tokens = len(self.tokenizer.encode(context_text))
+                    total_tokens = base_with_titles_tokens + context_tokens
+
+                    if total_tokens <= self.max_input_tokens:
+                        final_contexts = temp_contexts
+                        actual_top_k = len(final_contexts)
+                    else:
+                        break  # 토큰 한계 초과하면 중단
+
+                # 최종 컨텍스트가 있으면 chat_parts에 추가
                 if final_contexts:
-                    # 모든 원본 검색 결과에서 제목 수집 (중복 제거)
-                    all_titles = set()
-                    for ctx in retrieved_contexts:
-                        title = ctx.get('title', '')
-                        if title and title != '':
-                            all_titles.add(title)
-
-                    # 검색 제목 섹션 추가
+                    # 모든 검색 결과 제목 추가 (이미 수집됨)
                     if all_titles:
                         titles_text = "[참고 문서 제목] " + ", ".join(sorted(all_titles))
-                        chat_parts.append(titles_text)
+                        chat_parts.insert(-1, titles_text)  # 질문 앞에 삽입
 
                     # 최종 선택된 컨텍스트로 참고 문서 생성
                     context_text = "[참고 문서] "
@@ -153,23 +245,22 @@ class CustomDataset(Dataset):
                         title = ctx.get('title', '')
                         text = ctx.get('text', '')
                         context_text += f"제목: {title}, 내용: {text} "
-                    chat_parts.append(context_text)
+                    chat_parts.insert(-1, context_text)  # 질문 앞에 삽입
 
-            if other_info:
-                chat_parts.append("[기타 정보]")
-                info_list = []
-                for key, value in other_info.items():
-                    if value is not None and value != "":
-                        info_list.append(f"{mapping[key]}: {value}")
-                chat_parts.append(",".join(info_list))
+                    actual_top_k = len(final_contexts)
+                else:
+                    # 컨텍스트는 없지만 제목은 있는 경우
+                    if all_titles:
+                        titles_text = "[참고 문서 제목] " + ", ".join(sorted(all_titles))
+                        chat_parts.insert(-1, titles_text)  # 질문 앞에 삽입
+                    actual_top_k = 0
 
-            # 질문 추가
-            chat_parts.append(f"[질문] {inp['question']}")
+            else:
+                actual_top_k = 0
 
             # 최종 프롬프트 생성
-            chat = " ".join(chat_parts)
-
-            return chat
+            final_chat = " ".join(chat_parts)
+            return final_chat, actual_top_k
 
         # 데이터 필터링 및 통계 수집
         original_count = len(data)
@@ -204,7 +295,11 @@ class CustomDataset(Dataset):
             if self.use_rag and "retrieved_contexts" in example:
                 retrieved_contexts = example["retrieved_contexts"]
 
-            user_prompt = make_chat(example["input"], retrieved_contexts)
+            # 동적 top_k로 프롬프트 생성
+            user_prompt, used_top_k = make_chat_with_dynamic_topk(example["input"], retrieved_contexts)
+
+            # 통계 수집
+            self.topk_usage_stats[used_top_k] += 1
 
             # use_system_prompt 설정에 따라 메시지 구성 변경
             if self.use_system_prompt:
@@ -231,6 +326,12 @@ class CustomDataset(Dataset):
                 enable_thinking=False,
             )
 
+            # 최종 입력 토큰 길이 체크
+            if source[0].shape[0] > self.max_input_tokens:
+                print(f"Skipping sample: input token length {source[0].shape[0]} exceeds limit {self.max_input_tokens}")
+                self.skipped_count += 1
+                continue
+
             target = example.get("output", "")
             target_text = ""
 
@@ -255,15 +356,75 @@ class CustomDataset(Dataset):
 
         # 필터링 결과 출력
         print(f"\n=== 데이터 필터링 결과 ===")
+        print(f"모델 최대 길이: {self.model_max_length}")
+        print(f"답변 예약 토큰: {self.answer_reserve_tokens} ({'CoT' if self.use_cot else '일반'})")
+        print(f"입력 최대 토큰: {self.max_input_tokens}")
         print(f"길이 필터링 활성화: {'예' if self.enable_length_filtering else '아니오'}")
         print(f"원본 데이터 수: {original_count}")
         if self.enable_length_filtering:
             print(f"질문 길이 초과로 제외된 데이터: {question_filtered} (질문 > {self.remove_question_count}자)")
             print(f"서술형 답변 길이 초과로 제외된 데이터: {answer_filtered} (서술형 답변 > {self.remove_answer_count}자)")
+        print(f"토큰 길이 초과로 건너뛴 데이터: {self.skipped_count}")
         print(f"최종 사용된 데이터 수: {filtered_count}")
         print(f"단어 반복 필터링: 동일 단어 {self.max_word_repetition}회 이상 반복 시 제거")
         if self.enable_length_filtering:
             print(f"제외 비율: {((original_count - filtered_count) / original_count * 100):.2f}%")
+
+        # Top-k 사용 통계 출력
+        print(f"\n=== Top-k 사용 통계 (청크 256토큰 기준) ===")
+        print(f"청크당 예상 토큰: {self.chunk_estimated_tokens} (256 + 제목/포맷팅)")
+        print(f"동적 조정 임계값: {self.length_thresholds}")
+        total_with_contexts = sum(v for k, v in self.topk_usage_stats.items() if k > 0)
+        for k, count in sorted(self.topk_usage_stats.items(), reverse=True):
+            if k == 0:
+                print(f"컨텍스트 없음: {count}개")
+            else:
+                percentage = (count / total_with_contexts * 100) if total_with_contexts > 0 else 0
+                estimated_tokens = k * self.chunk_estimated_tokens
+                print(f"Top-{k} 사용: {count}개 ({percentage:.1f}%) - 약 {estimated_tokens}토큰")
+
+    def check_token_lengths(self):
+        """토큰 길이 통계 확인"""
+        if not self.inp:
+            print("데이터가 없습니다.")
+            return
+
+        lengths = [len(inp) for inp in self.inp]
+
+        print(f"\n=== 토큰 길이 통계 ===")
+        print(f"총 데이터 수: {len(lengths)}")
+        print(f"최소 길이: {min(lengths)}")
+        print(f"최대 길이: {max(lengths)}")
+        print(f"평균 길이: {sum(lengths)/len(lengths):.1f}")
+        print(f"중간값: {sorted(lengths)[len(lengths)//2]}")
+
+        # 길이별 분포
+        over_30k = sum(1 for l in lengths if l > 30000)
+        over_32k = sum(1 for l in lengths if l > 32768)
+        over_max = sum(1 for l in lengths if l > self.max_input_tokens)
+
+        print(f"\n=== 길이 초과 통계 ===")
+        print(f"30,000 토큰 초과: {over_30k}/{len(lengths)} ({over_30k/len(lengths)*100:.1f}%)")
+        print(f"32,768 토큰 초과: {over_32k}/{len(lengths)} ({over_32k/len(lengths)*100:.1f}%)")
+        print(f"입력 한계({self.max_input_tokens}) 초과: {over_max}/{len(lengths)} ({over_max/len(lengths)*100:.1f}%)")
+
+        # 길이 구간별 분포
+        print(f"\n=== 길이 구간별 분포 ===")
+        ranges = [(0, 10000), (10000, 20000), (20000, 30000), (30000, 40000), (40000, float('inf'))]
+        for start, end in ranges:
+            count = sum(1 for l in lengths if start <= l < end)
+            if end == float('inf'):
+                print(f"{start}+ 토큰: {count}개 ({count/len(lengths)*100:.1f}%)")
+            else:
+                print(f"{start}-{end} 토큰: {count}개 ({count/len(lengths)*100:.1f}%)")
+
+        return {
+            'lengths': lengths,
+            'min': min(lengths),
+            'max': max(lengths),
+            'mean': sum(lengths)/len(lengths),
+            'over_limit': over_max
+        }
 
     def __len__(self):
         return len(self.inp)

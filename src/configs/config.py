@@ -9,7 +9,7 @@ from peft import TaskType
 GLOBAL_BATCH_SIZE = 1
 NUM_DEVICES = 1
 VERSION = "1-3"
-FIT = "v1_2_1_fp16"
+FIT = "v1_1.1_fp16_RAG"
 LORA_RANK = 64
 LORA_ALPHA = LORA_RANK
 DROPOUT = 0.1
@@ -54,7 +54,7 @@ class SystemArgs:
     num_proc: int = 4
     result_save_dir_rag: str = "pre_result_with_rag"
     dpo_dataset_create_mode: bool = False
-    use_rag: bool = False  # RAG 사용 여부
+    use_rag: bool = True  # RAG 사용 여부
 
 
 @dataclass
@@ -62,7 +62,7 @@ class ModelArgs:
     model_id: ModelId = ModelId.KANANA1_5_BASE_8B
     dtype: DType = DType.FP16
     use_flash_attn2: bool = True
-    max_new_tokens: int = 2024
+    max_new_tokens: int = 512
     do_sample: bool = False
     top_p: float = 0.8
     temperature: float = 0.7
@@ -76,11 +76,12 @@ class ModelArgs:
         "You are a helpful AI assistant. Please answer the user's questions kindly. "
         "당신은 도움이 되는 어시스턴트입니다. 당신은 한국의 전통 문화와 역사, 문법, 사회, 과학기술 등 다양한 분야에 대해 잘 알고 있는 유능한 AI 어시스턴트 입니다. "
         "사용자의 질문에 대해 친절하게 답변해주세요. 답변은 정확해야하고 틀리면 안됩니다. 그리고 동일한 문장을 절대 반복하지 마시오. "
-        "반드시 키워드가 정답이 아닐 수 있습니다."
+        "반드시 키워드가 정답이 아닐 수 있습니다. "
+        "[참고 문서]에는 도움되는 내용이 있을 수 있지만 관련 없는 내용이 있을 수 있습니다. [질문]의 내용과 관련 있는 내용을 참고하여 답변을 작성하세요. 그리고 [참고 문서]의 출처는 작성하지 않아도 됩니다. 답변 내용만 작성하세요."
     )
     is_test_and_drop_other_info: bool = False
     use_system_prompt: bool = True
-    early_stopping: int | bool = 2 # 5
+    early_stopping: int | bool = False # 5
     use_accelerate: bool = False
     load_model: str = "lora_adapter" # "lora_adapter"
     is_cot: bool = False
@@ -137,11 +138,12 @@ class BitsAndBytesArgs:
 @dataclass
 class SFTTrainingArgs:
     output_dir: str = "output"
-    num_train_epochs: int = 5                # Epochs to train the model
+    max_grad_norm: float = 1.0
+    num_train_epochs: int = 3                # Epochs to train the model
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     eval_accumulation_steps: int = 1
-    gradient_accumulation_steps: int = GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
+    gradient_accumulation_steps: int = 1 # GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
     eval_strategy: str = "steps" # "no", "epoch", "steps"
     save_strategy: str = "steps" # "no", "epoch", "steps"
     eval_steps: int | None = 613 # 100
@@ -157,6 +159,7 @@ class SFTTrainingArgs:
     fp16: bool = True
     bf16: bool = False
     packing: bool = False
+    seed: int = 42
     # max_length: int = 4096
     gradient_checkpointing: bool = True
     activation_offloading: bool = False
@@ -174,8 +177,8 @@ class SFTTrainingArgs:
 class DPOTrainingArgs:
     output_dir: str = "output"
     num_train_epochs: int = 3
-    per_device_train_batch_size: int = 1
-    per_device_eval_batch_size: int = 1
+    per_device_train_batch_size: int = 4
+    per_device_eval_batch_size: int = 4
     eval_accumulation_steps: int = 1
     gradient_accumulation_steps: int = GLOBAL_BATCH_SIZE // (per_device_train_batch_size * NUM_DEVICES)
     eval_strategy: str = "steps"

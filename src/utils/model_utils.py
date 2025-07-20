@@ -150,6 +150,8 @@ def data_prepare(
             use_system_prompt=model_args.use_system_prompt,
             is_test_and_drop_other_info=is_test_and_drop_other_info
         )
+        # stats = data_dict[split].check_token_lengths()
+        # print(f"Dataset {split} stats: {stats}")
     return data_dict
 
 
@@ -343,9 +345,15 @@ def prepare_model_tokenmizer(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    tokenizer.model_max_length = model.config.max_position_embeddings
+
     model.config.pad_token_id = tokenizer.pad_token_id
 
-    count_trainable_params(model)
-    print("Model and tokenizer prepared successfully.")
-
+    # count_trainable_params(model)
+    # print("Model and tokenizer prepared successfully.")
+    # print(f"config.max_position_embeddings: {model.config.max_position_embeddings}")
+    # print(f"config.max_sequence_length: {getattr(model.config, 'max_sequence_length', 'Not found')}")
+    # print(f"config.n_positions: {getattr(model.config, 'n_positions', 'Not found')}")
+    # print(f"model_max_length: {tokenizer.model_max_length}")
+    # print(f"max_position_embeddings: {getattr(tokenizer, 'max_position_embeddings', 'Not found')}")
     return model, tokenizer

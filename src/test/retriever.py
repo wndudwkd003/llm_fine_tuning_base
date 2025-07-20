@@ -6,7 +6,7 @@ from src.configs.config import (
     RAGIndexArgs
 )
 from src.utils.print_utils import printi
-from src.test.build_db import advanced_preprocess_text
+
 
 
 class Retriever:
@@ -40,12 +40,13 @@ class Retriever:
 
     def retrieve(self, query: str, top_k: int = 5):
         # 쿼리 완전 전처리 (검색용)
-        if self.use_query_preprocessing:
-            processed_query = advanced_preprocess_text(query, use_morphological_analysis=True)
-            if not processed_query:
-                processed_query = query  # 전처리 실패시 원본 사용
-        else:
-            processed_query = query  # 전처리 없이 원본 사용
+        # if self.use_query_preprocessing:
+        #     # processed_query = advanced_preprocess_text(query, use_morphological_analysis=True)
+        #     # if not processed_query:
+        #     #     processed_query = query  # 전처리 실패시 원본 사용
+        #     pass
+        # else:
+        processed_query = query  # 전처리 없이 원본 사용
 
         query_embedding = self.embedding_model.encode(
             [processed_query],  # 전처리된 쿼리 사용

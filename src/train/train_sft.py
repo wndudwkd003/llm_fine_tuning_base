@@ -6,6 +6,7 @@ from transformers import (
     BitsAndBytesConfig,
     EarlyStoppingCallback,
 )
+import argparse
 from datasets import Dataset
 from trl import SFTTrainer
 from peft import PeftModel
@@ -252,6 +253,12 @@ if __name__ == "__main__":
     sft_training_args = SFTTrainingArgs()
     bits_and_bytes_args = BitsAndBytesArgs()
     lora_args = LoraArgs()
+
+    # ArgumentParser를 사용하여 명령줄 인자 처리
+    # parser = argparse.ArgumentParser(description="Fine-tuning and Inference Script")
+    # parser.add_argument("--is_train", action="store_true", help="Set to True for training mode")
+    # is_train = parser.parse_args().is_train
+    # system_args.train = is_train
 
     set_seed(system_args.seed)
     os.environ["HF_TOKEN"] = system_args.hf_token

@@ -6,6 +6,7 @@ from tqdm.auto import tqdm
 from src.configs.config import RAGIndexArgs
 from src.test.retriever import Retriever
 from src.utils.print_utils import printi, printw
+import argparse
 
 def convert_numpy_types(obj):
     """numpy 타입을 JSON 직렬화 가능한 타입으로 변환"""
@@ -391,11 +392,20 @@ def process_rag_queries_to_contexts(
 if __name__ == "__main__":
     from src.configs.config import RAGIndexArgs
 
+    # argparse 설정
+    original_dir = "datasets/merged_dataset_no_aug_v1-3_remove_duplication"
+    parser = argparse.ArgumentParser(description="Process RAG queries to contexts")
+    parser.add_argument("--original_dir", type=str, default=original_dir, help="Original data directory")
+
+    original_dir = parser.parse_args().original_dir
+
+
     # RAG 설정 로드
     rag_index_args = RAGIndexArgs()
+    rag_index_args.index_dir = "rag_index/kowikitext"
 
     # 원본 데이터 경로
-    original_dir = "datasets/merged_dataset_no_aug_v1-3-cot_remove_duplication"
+
 
     # RAG가 추가된 데이터를 저장할 경로
     output_dir = f"{original_dir}_for_rag"
