@@ -14,11 +14,11 @@ class Retriever:
         self,
         rag_index_args: RAGIndexArgs,
         device: str = "cuda",
-        use_query_preprocessing: bool = True
+        # use_query_preprocessing: bool = True
     ):
         printi("Initializing Retriever")
         self.device = device
-        self.use_query_preprocessing = use_query_preprocessing
+        # self.use_query_preprocessing = use_query_preprocessing
 
 
         idx_path = os.path.join(rag_index_args.index_dir, rag_index_args.index_base)

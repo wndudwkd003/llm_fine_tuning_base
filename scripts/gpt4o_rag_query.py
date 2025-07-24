@@ -2,7 +2,7 @@ import os, json, shutil, yaml, time
 from openai import OpenAI, RateLimitError
 
 DATA_PATH = "datasets/merged_dataset_no_aug_v1-3"
-TARGET_PATH = DATA_PATH + "_rag_queries"
+TARGET_PATH = DATA_PATH + "_rag_queries_v2"
 TARGET_FILE = {"train.json": True, "dev.json": True, "test.json": False}
 YAML_PATH = "src/configs/token.yaml"
 USING_MODEL = "gpt-4.1-2025-04-14"
@@ -15,26 +15,35 @@ def make_prompt(sample):
     d_input = sample["input"]
     question = d_input["question"]
     answer = sample["output"]["answer"]
+    question_type = d_input.get("question_type", "")
+
     other_info = ", ".join([
         "카테고리: " + d_input.get("category", ""),
         "도메인: " + d_input.get("domain", ""),
-        "문제 타입: " + d_input.get("question_type", ""),
+        "문제 타입: " + question_type,
         "키워드: " + d_input.get("topic_keyword", "")
     ])
 
-    base = ("[필수지시사항] 지금부터 당신은 주어진 [질문]과 [답변]을 분석하여 답변을 출력하는것이 아닌 RAG(Retrieval-Augmented Generation) 시스템에서 "
+    base = ("[필수지시사항] 지금부터 당신은 주어진 [질문]과 [기타정보]를 분석하여 RAG(Retrieval-Augmented Generation) 시스템에서 "
             "관련 정보를 효과적으로 검색할 수 있는 질의를 생성해야 합니다. "
             "마크다운·불필요한 구두점·장식 문구·줄바꿈 문자('\\n')를 사용하지 마십시오.")
 
-    instruction = ("[지시사항] 다음과 같은 3가지 유형의 검색 질의를 생성하십시오: "
-                  "1) 핵심 키워드 기반 검색 질의 - 답변에 필요한 핵심 개념이나 용어를 포함한 질의 "
-                  "2) 맥락 정보 검색 질의 - 문제의 배경지식이나 관련 정보를 찾기 위한 질의 "
-                  "3) 상세 정보 검색 질의 - 답변을 뒷받침하는 구체적인 사실이나 데이터를 찾기 위한 질의")
+    # 단답형과 서술형에 따른 지시사항 구분
+    if question_type == "단답형" or any(keyword in question_type for keyword in ["단답형", "선다형"]):
+        instruction = ("[지시사항] 단답형 문제를 위한 3가지 유형의 검색 질의를 생성하십시오: "
+                      "1) 핵심 키워드 기반 검색 질의 - 질문에 포함된 주요 개념이나 용어의 정의를 찾기 위한 질의 "
+                      "2) 사실 관계 검색 질의 - 질문과 관련된 구체적인 사실이나 데이터를 찾기 위한 질의 "
+                      "3) 맥락 정보 검색 질의 - 질문의 배경이 되는 관련 정보나 연관 개념을 찾기 위한 질의")
+    else:
+        instruction = ("[지시사항] 서술형 문제를 위한 3가지 유형의 검색 질의를 생성하십시오: "
+                      "1) 핵심 개념 검색 질의 - 질문에서 다루는 주요 개념이나 이론의 설명을 찾기 위한 질의 "
+                      "2) 사실 관계 검색 질의 - 질문과 관련된 구체적인 사실, 원인, 결과, 과정을 찾기 위한 질의 "
+                      "3) 배경 지식 검색 질의 - 질문을 이해하고 답변하는데 필요한 배경 정보나 맥락을 찾기 위한 질의")
 
     output_format = ("각 질의는 <검색></검색> 태그로 감싸서 출력하십시오. "
                     "예시: <검색>첫 번째 검색 질의</검색> <검색>두 번째 검색 질의</검색> <검색>세 번째 검색 질의</검색>")
 
-    return f"{base} [기타정보] {other_info} 당신이 분석할 [질문]은 {question} 입니다. 그리고 [답변]은 {answer} 입니다. {instruction} {output_format}"
+    return f"{base} [기타정보] {other_info} 당신이 분석할 [질문]은 {question} 입니다. {instruction} {output_format}"
 
 def save_progress(data, filepath):
     """진행 상황을 즉시 저장하는 함수"""
@@ -77,7 +86,7 @@ def refine_data_with_immediate_save(data, client: OpenAI, output_path):
         sample = data[idx]
         prompt = make_prompt(sample)
         messages = [
-            {"role": "system", "content": "당신은 한국 문화·역사·과학기술 분야의 전문가로서 RAG 시스템을 위한 효과적인 검색 질의를 생성하는 전문가입니다."},
+            {"role": "system", "content": "당신은 한국 문화·역사·과학기술 분야의 전문가로서 RAG 시스템을 위한 효과적인 검색 질의를 생성하는 전문가입니다. 주어진 질문과 키워드만을 바탕으로 답변을 찾는데 필요한 정보를 검색할 수 있는 질의를 만들어야 합니다."},
             {"role": "user", "content": prompt}
         ]
 
