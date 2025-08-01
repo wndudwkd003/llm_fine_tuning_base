@@ -1,0 +1,10 @@
+datasets/
+output/
+rag_index/
+rag_index_backup/
+src/configs/token.yaml
+encoded_output/
+output_backup/
+
+__pycache__/
+*.pyc
